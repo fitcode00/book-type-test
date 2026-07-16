@@ -289,6 +289,16 @@ let current = -1; // -1 = 인트로, 0~39 = 문항, 40 = 결과
 
 const app = document.getElementById('app');
 
+// 미리 받아둔 표지 매니페스트 (fetch_covers.js로 생성). 없으면 빈 객체로 시작하고
+// 실시간 API 폴백으로 처리됨.
+let LOCAL_COVERS = {};
+async function loadCoversManifest(){
+  try{
+    const res = await fetch('covers.json');
+    if(res.ok) LOCAL_COVERS = await res.json();
+  }catch(e){ /* covers.json 없으면 실시간 API로만 동작 */ }
+}
+
 /* ---------- 채점 ---------- */
 function computeResult(){
   const sums = {F:0,G:0,P:0,T:0,W:0,S:0,R:0,D:0};
@@ -392,16 +402,19 @@ function showResult(code, sums, shared){
 
     <div class="sectiontitle">추천 도서 3권</div>
     <div class="books">
-      ${type.books.map((b,i) => `
+      ${type.books.map((b,i) => {
+        const local = LOCAL_COVERS[code] && LOCAL_COVERS[code][i];
+        return `
         <div class="book">
           <div class="cover" id="cover-${i}" style="background:${type.color};">
-            <span>${b.title[0]}</span>
-            <img alt="${b.title} 표지">
+            <span style="${local?'display:none;':''}">${b.title[0]}</span>
+            <img alt="${b.title} 표지" ${local ? `src="${local}" style="display:block;"` : ''}>
           </div>
           <p class="cat">${b.cat}</p>
           <p class="title">${b.title}</p>
           <p class="author">${b.author}</p>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
     </div>
 
     <div class="sectiontitle">공유 카드</div>
@@ -446,7 +459,11 @@ function showResult(code, sums, shared){
     document.getElementById('saveImgBtn').onclick = () => saveShareImage(type, code);
   }
 
-  type.books.forEach((b, i) => loadCover(`cover-${i}`, b.title, b.author));
+  // 로컬에 미리 받아둔 표지가 없는 책만 실시간 API로 시도
+  type.books.forEach((b, i) => {
+    const local = LOCAL_COVERS[code] && LOCAL_COVERS[code][i];
+    if(!local) loadCover(`cover-${i}`, b.title, b.author);
+  });
 }
 
 /* ---------- 공유 이미지 저장 (canvas) ---------- */
@@ -562,7 +579,8 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight){
 }
 
 /* ---------- 시작 ---------- */
-(function boot(){
+(async function boot(){
+  await loadCoversManifest();
   const sharedCode = new URLSearchParams(location.search).get('type');
   if(sharedCode && TYPES[sharedCode]){
     // 공유 링크로 들어온 경우: 내 답변이 없으니 게이지 없이 결과만 보여줌

@@ -1,0 +1,82 @@
+{
+  "FPWR": [
+    "covers/FPWR-0.jpg",
+    "covers/FPWR-1.jpg",
+    "covers/FPWR-2.jpg"
+  ],
+  "FPWD": [
+    "covers/FPWD-0.jpg",
+    "covers/FPWD-1.jpg",
+    "covers/FPWD-2.jpg"
+  ],
+  "FPSR": [
+    "covers/FPSR-0.jpg",
+    "covers/FPSR-1.jpg",
+    "covers/FPSR-2.jpg"
+  ],
+  "FPSD": [
+    "covers/FPSD-0.jpg",
+    "covers/FPSD-1.jpg",
+    "covers/FPSD-2.jpg"
+  ],
+  "FTWR": [
+    "covers/FTWR-0.jpg",
+    "covers/FTWR-1.jpg",
+    "covers/FTWR-2.jpg"
+  ],
+  "FTWD": [
+    "covers/FTWD-0.jpg",
+    "covers/FTWD-1.jpg",
+    "covers/FTWD-2.jpg"
+  ],
+  "FTSR": [
+    "covers/FTSR-0.jpg",
+    "covers/FTSR-1.jpg",
+    "covers/FTSR-2.jpg"
+  ],
+  "FTSD": [
+    "covers/FTSD-0.jpg",
+    "covers/FTSD-1.jpg",
+    "covers/FTSD-2.jpg"
+  ],
+  "GPWR": [
+    "covers/GPWR-0.jpg",
+    "covers/GPWR-1.jpg",
+    "covers/GPWR-2.jpg"
+  ],
+  "GPWD": [
+    "covers/GPWD-0.jpg",
+    "covers/GPWD-1.jpg",
+    "covers/GPWD-2.jpg"
+  ],
+  "GPSR": [
+    "covers/GPSR-0.jpg",
+    "covers/GPSR-1.jpg",
+    "covers/GPSR-2.jpg"
+  ],
+  "GPSD": [
+    "covers/GPSD-0.jpg",
+    "covers/GPSD-1.jpg",
+    "covers/GPSD-2.jpg"
+  ],
+  "GTWR": [
+    "covers/GTWR-0.jpg",
+    "covers/GTWR-1.jpg",
+    "covers/GTWR-2.jpg"
+  ],
+  "GTWD": [
+    "covers/GTWD-0.jpg",
+    "covers/GTWD-1.jpg",
+    "covers/GTWD-2.jpg"
+  ],
+  "GTSR": [
+    "covers/GTSR-0.jpg",
+    "covers/GTSR-1.jpg",
+    "covers/GTSR-2.jpg"
+  ],
+  "GTSD": [
+    "covers/GTSD-0.jpg",
+    "covers/GTSD-1.jpg",
+    "covers/GTSD-2.jpg"
+  ]
+}
