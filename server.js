@@ -44,11 +44,6 @@ const coverCache = new Map();
 
 function fetchAladin(query, queryType){
   return new Promise((resolve) => {
-    const cacheKey = `${query}|${queryType}`;
-    if (coverCache.has(cacheKey)) {
-      resolve(coverCache.get(cacheKey));
-      return;
-    }
     const params = new URLSearchParams({
       ttbkey: ALADIN_TTB_KEY,
       Query: query,
@@ -66,14 +61,15 @@ function fetchAladin(query, queryType){
       proxyRes.on('data', (chunk) => (body += chunk));
       proxyRes.on('end', () => {
         let cover = null;
+        let parseError = null;
+        let data = null;
         try {
-          const data = JSON.parse(body);
+          data = JSON.parse(body);
           cover = (data.item && data.item[0] && data.item[0].cover) || null;
-        } catch (e) { /* 파싱 실패 시 null 유지 */ }
-        coverCache.set(cacheKey, cover);
-        resolve(cover);
+        } catch (e) { parseError = String(e); }
+        resolve({ cover, raw: body.slice(0, 800), parseError, upstreamStatus: proxyRes.statusCode });
       });
-    }).on('error', () => resolve(null));
+    }).on('error', (err) => resolve({ cover: null, error: String(err) }));
   });
 }
 
@@ -83,12 +79,22 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/aladin-api') {
     const query = url.searchParams.get('query') || '';
     const queryType = url.searchParams.get('queryType') || 'Keyword';
-    const cover = await fetchAladin(query, queryType);
+    const debug = url.searchParams.get('debug') === '1';
+    const cacheKey = `${query}|${queryType}`;
+
+    let result;
+    if (coverCache.has(cacheKey) && !debug) {
+      result = { cover: coverCache.get(cacheKey) };
+    } else {
+      result = await fetchAladin(query, queryType);
+      coverCache.set(cacheKey, result.cover);
+    }
+
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
     });
-    res.end(JSON.stringify({ cover }));
+    res.end(JSON.stringify(debug ? result : { cover: result.cover }));
     return;
   }
 
