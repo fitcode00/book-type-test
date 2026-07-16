@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>캐릭터 이미지 다운로드 (1회용 도구)</title>
+<style>
+  body{font-family:sans-serif;max-width:560px;margin:60px auto;line-height:1.6;color:#2b2a26;}
+  button{padding:12px 20px;font-size:15px;cursor:pointer;}
+  #log{margin-top:20px;font-size:13px;color:#555;white-space:pre-wrap;}
+</style>
+</head>
+<body>
+<h2>16개 캐릭터 이미지 다운로드</h2>
+<p>이 버튼을 누르면 힉스필드에서 생성한 16개 캐릭터 이미지가 하나씩 다운로드돼.
+다운로드된 파일들을 <code>characters</code>라는 폴더를 만들어서 그 안에 옮겨줘
+(파일명은 자동으로 <code>FPWR.png</code> 같은 유형 코드로 저장됨).
+그러고 나면 이 페이지는 지워도 됨.</p>
+<button id="startBtn">다운로드 시작</button>
+<div id="log"></div>
+
+<script>
+const CHARACTERS = {
+  FPWR: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001311_c0527ddc-bf80-4f4d-bffb-855eb2e8e676.png',
+  FPWD: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001458_336af7e9-6188-4458-af24-aacfcd74c966.png',
+  FPSR: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001529_a7709e23-2666-4aea-a86c-40ae32345ef5.png',
+  FPSD: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001336_a34067c4-68e4-4348-bf15-472c7a72eaf9.png',
+  FTWR: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001554_c210f09a-f2a4-44d6-9b41-9221503efa86.png',
+  FTWD: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001357_d9f69c75-a0ba-4d38-930f-6e271ee082f9.png',
+  FTSR: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001618_ae444759-bde1-4ec7-9efd-cb269bcabd5f.png',
+  FTSD: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001649_57ff2994-0283-4e68-a140-d15c36ab4915.png',
+  GPWR: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001724_9625a1ea-9506-4427-9452-00810fb6587c.png',
+  GPWD: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001756_4003da19-2823-4159-bdc2-de3316696bbb.png',
+  GPSR: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001422_99cb00a0-91de-435f-84bd-f1d1367561e1.png',
+  GPSD: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001821_00f7754e-da5b-4403-b4d7-fbd116e0b8af.png',
+  GTWR: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001844_6a5c50b3-fe9e-43f1-a25d-7787a3006389.png',
+  GTWD: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001909_b9f12d4e-b71c-4f83-b853-b226ab33547b.png',
+  GTSR: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001934_6bf50882-40f7-47d8-a1aa-792d290458e0.png',
+  GTSD: 'https://d8j0ntlcm91z4.cloudfront.net/user_3A1UP3qyw567WzSgX1LPtuCGzZ2/hf_20260716_001438_74f4ebf2-a668-4830-9a67-c158ada8649b.png'
+};
+
+const log = document.getElementById('log');
+function print(msg){ log.textContent += msg + '\n'; }
+
+async function downloadOne(code, url){
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objUrl;
+  a.download = `${code}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objUrl);
+}
+
+document.getElementById('startBtn').onclick = async () => {
+  const codes = Object.keys(CHARACTERS);
+  for(const code of codes){
+    try{
+      await downloadOne(code, CHARACTERS[code]);
+      print(`✔ ${code}.png 다운로드됨`);
+    }catch(e){
+      print(`✘ ${code} 실패: ${e}`);
+    }
+    await new Promise(r => setTimeout(r, 400)); // 브라우저가 다운로드 팝업을 순서대로 처리하도록 살짝 텀
+  }
+  print('\n완료! 다운로드 폴더에서 16개 파일을 characters 폴더로 옮겨줘.');
+};
+</script>
+</body>
+</html>

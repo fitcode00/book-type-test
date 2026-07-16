@@ -1,0 +1,12 @@
+{
+  "name": "book-type-test",
+  "version": "1.0.0",
+  "description": "책 유형 테스트 - 30억 챌린지 두번째 프로젝트",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

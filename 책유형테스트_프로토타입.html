@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>책 유형 테스트</title>
+<style>
+  :root{
+    --bg:#faf8f3; --card:#ffffff; --ink:#2b2a26; --sub:#77746b; --line:#e7e2d6; --accent:#c96b4e;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"Pretendard","Apple SD Gothic Neo",sans-serif;background:var(--bg);color:var(--ink);}
+  #app{max-width:640px;margin:0 auto;padding:32px 20px 80px;min-height:100vh;}
+  .serif{font-family:"Noto Serif KR","Georgia",serif;}
+  .brand{font-size:13px;color:var(--sub);letter-spacing:.08em;text-transform:uppercase;margin-bottom:28px;text-align:center;}
+  .hero{text-align:center;padding:40px 0 20px;}
+  .hero h1{font-size:26px;font-weight:600;margin:0 0 14px;line-height:1.4;}
+  .hero p{font-size:15px;color:var(--sub);line-height:1.7;margin:0 auto 28px;max-width:420px;}
+  .btn{display:inline-block;padding:14px 28px;background:var(--ink);color:#fff;border:none;border-radius:999px;font-size:15px;font-weight:500;cursor:pointer;}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);}
+  .btn:active{transform:scale(.98);}
+  .btnrow{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  .progress{height:4px;background:var(--line);border-radius:4px;margin-bottom:36px;overflow:hidden;}
+  .progress-bar{height:100%;background:var(--accent);transition:width .25s;}
+  .qmeta{font-size:12px;color:var(--sub);margin-bottom:10px;}
+  .qtext{font-size:19px;line-height:1.6;margin:0 0 32px;font-weight:500;}
+  .scale{display:flex;justify-content:space-between;gap:8px;margin-bottom:36px;}
+  .scale button{flex:1;aspect-ratio:1/1;border-radius:50%;border:1px solid var(--line);background:var(--card);cursor:pointer;font-size:13px;color:var(--sub);}
+  .scale button.sel{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .scalelabels{display:flex;justify-content:space-between;font-size:11px;color:var(--sub);margin-bottom:36px;}
+  .navrow{display:flex;justify-content:space-between;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;}
+  .resulthead{text-align:center;padding:20px 0 8px;}
+  .resulthead .code{font-size:12px;color:var(--sub);letter-spacing:.08em;}
+  .resulthead h1{font-size:30px;margin:8px 0 12px;}
+  .resulthead p{font-size:14px;color:var(--sub);max-width:420px;margin:0 auto;line-height:1.7;}
+  .gauges{display:flex;flex-direction:column;gap:16px;margin:28px 0;}
+  .gauge-label{display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-bottom:6px;}
+  .gauge-track{position:relative;height:6px;background:var(--line);border-radius:4px;}
+  .gauge-dot{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;background:var(--accent);transform:translate(-50%,-50%);}
+  .sectiontitle{font-size:13px;font-weight:600;color:var(--sub);margin:28px 0 12px;}
+  .books{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+  .book{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;}
+  .book .cover{position:relative;aspect-ratio:3/4;border-radius:6px;margin-bottom:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#fff;font-family:"Noto Serif KR",serif;font-size:26px;font-weight:700;}
+  .book .cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;}
+  .book .cat{font-size:10px;color:var(--accent);margin:0 0 4px;}
+  .book .title{font-size:12.5px;font-weight:600;margin:0 0 2px;line-height:1.35;}
+  .book .author{font-size:11.5px;color:var(--sub);margin:0;}
+  .sharecard{position:relative;width:280px;aspect-ratio:1/1;margin:0 auto;border-radius:20px;padding:28px;display:flex;flex-direction:column;justify-content:space-between;}
+  .sharecard .tag{font-size:11px;opacity:.75;letter-spacing:.06em;margin-bottom:6px;}
+  .sharecard .name{font-size:26px;font-weight:700;line-height:1.3;}
+  .sharecard .desc{font-size:13px;opacity:.85;line-height:1.6;}
+  .sharecard .foot{display:flex;justify-content:space-between;font-size:11px;opacity:.7;}
+  .mascot-wrap{display:flex;justify-content:center;margin-bottom:6px;}
+  .sharecard .mascot-wrap{position:absolute;top:16px;right:16px;margin:0;}
+  .mascot-img{border-radius:50%;object-fit:cover;background:var(--line);}
+  .mascot-lg{width:132px;height:132px;}
+  .mascot-sm{width:60px;height:60px;}
+  @media (max-width:420px){ .books{grid-template-columns:1fr 1fr 1fr;} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ---------- 데이터 ---------- */
+const QUESTIONS = [
+  {pole:'F',text:'소설 속 인물이 상처받으면 며칠 동안 그 기분에서 잘 못 빠져나온다.'},
+  {pole:'F',text:'책 읽다가 등장인물 대신 화가 나서 혼잣말을 한 적 있다.'},
+  {pole:'F',text:'주인공이 답답한 선택을 하면 "그러지 마"라고 말리고 싶어진다.'},
+  {pole:'F',text:'인물이 상처받는 장면을 읽으면 그날 하루 기분까지 영향을 받는다.'},
+  {pole:'F',text:'책을 덮고 나서도 그 인물이 지금 뭐 하고 있을지 상상해본 적 있다.'},
+  {pole:'G',text:'슬픈 장면을 읽을 때도 "작가가 왜 이 타이밍에 이 사건을 넣었을까"부터 생각한다.'},
+  {pole:'G',text:'등장인물의 감정보다 그 감정이 어떤 문장으로 표현됐는지가 더 눈에 들어온다.'},
+  {pole:'G',text:'인물이 무너지는 장면에서도 나도 모르게 서술 방식이나 구조를 뜯어보고 있다.'},
+  {pole:'G',text:'캐릭터에 몰입하기보다 "이 인물은 왜 이렇게 설계됐을까" 분석하는 게 더 편하다.'},
+  {pole:'G',text:'감정이 격해지는 장면일수록 오히려 한 발 물러나 냉정하게 읽게 된다.'},
+  {pole:'P',text:'다음 내용이 궁금해서 밥 먹으면서도 책을 손에서 못 놓은 적 있다.'},
+  {pole:'P',text:'사건이 안 터지고 인물 심리만 길게 나오면 지루해진다.'},
+  {pole:'P',text:'반전이 있다는 얘기를 들으면 오히려 더 빨리 읽고 싶어진다.'},
+  {pole:'P',text:'책을 추천받을 때 "이야기가 진짜 재밌어?"부터 물어본다.'},
+  {pole:'P',text:'결말을 먼저 알고 읽느니 차라리 안 읽는 게 낫다고 생각한다.'},
+  {pole:'T',text:'사건 자체보다 인물이 왜 그런 선택을 했는지 이유가 더 궁금하다.'},
+  {pole:'T',text:'인상 깊은 문장을 따로 메모하거나 필사해본 적 있다.'},
+  {pole:'T',text:'줄거리는 가물가물해도 어떤 문장이나 생각이 남는 책이 좋은 책이라 느낀다.'},
+  {pole:'T',text:'책을 다 읽고 나서 "이게 결국 무슨 얘기였지" 곱씹는 시간을 좋아한다.'},
+  {pole:'T',text:'사건 전개보다 문장 하나하나의 밀도가 더 중요하다.'},
+  {pole:'W',text:'힘든 날엔 결말이 따뜻하다는 걸 확인하고 나서야 책을 고른다.'},
+  {pole:'W',text:'책에서라도 위로받고 싶어서 읽을 때가 많다.'},
+  {pole:'W',text:'새드엔딩이라는 걸 미리 알면 그 책은 잘 안 읽게 된다.'},
+  {pole:'W',text:'다정한 문장을 만나면 그 페이지를 접어두고 나중에 또 본다.'},
+  {pole:'W',text:'힘든 감정을 다루더라도 결국엔 다독여주는 책이 좋다.'},
+  {pole:'S',text:'불편하더라도 현실을 있는 그대로 보여주는 책에 더 끌린다.'},
+  {pole:'S',text:'마음이 힘들 때일수록 오히려 묵직하고 어두운 책을 찾게 된다.'},
+  {pole:'S',text:'위로만 하는 결말보다 찝찝해도 솔직한 결말이 낫다고 생각한다.'},
+  {pole:'S',text:'읽고 나서 마음이 불편해지는 책을 오히려 좋은 책이라 느낀 적 있다.'},
+  {pole:'S',text:'힘든 주제를 피하지 않고 정면으로 다루는 작가를 신뢰한다.'},
+  {pole:'R',text:'재밌는 책은 하루이틀 만에 끝까지 읽어버린다.'},
+  {pole:'R',text:'시리즈물을 보면 중간에 멈추지 못하고 끝까지 내리읽는 편이다.'},
+  {pole:'R',text:'읽다 만 책이 있으면 찜찜해서 다른 책에 손이 잘 안 간다.'},
+  {pole:'R',text:'밤새워서라도 결말을 확인해야 마음이 놓인다.'},
+  {pole:'R',text:'한 번에 한 권만 붙잡고 끝을 봐야 직성이 풀린다.'},
+  {pole:'D',text:'좋아하는 책일수록 아껴 읽느라 오히려 완독까지 오래 걸린다.'},
+  {pole:'D',text:'여러 권을 동시에 조금씩 읽는 게 편하다.'},
+  {pole:'D',text:'한 챕터 읽고 나서 바로 다음으로 안 넘어가고 여운을 두는 편이다.'},
+  {pole:'D',text:'완독 속도보다 그 순간의 문장을 곱씹는 게 더 중요하다.'},
+  {pole:'D',text:'책을 다 읽는 데 몇 주, 몇 달이 걸려도 상관없다.'}
+];
+
+const AXES = [
+  {key:'FG', left:'F', right:'G', leftLabel:'감정이입', rightLabel:'관찰'},
+  {key:'PT', left:'P', right:'T', leftLabel:'스토리', rightLabel:'사유'},
+  {key:'WS', left:'W', right:'S', leftLabel:'위로', rightLabel:'직면'},
+  {key:'RD', left:'R', right:'D', leftLabel:'몰아읽기', rightLabel:'음미'}
+];
+
+const TYPES = {
+  FPWR:{name:'정주행 위로러', desc:'몰입해서 술술 읽히는 이야기로 위로받는 타입', color:'#e7c9a9', books:[
+    {cat:'고전/명작', title:'빨간 머리 앤', author:'루시 모드 몽고메리'},
+    {cat:'현대 화제작', title:'어서 오세요, 휴남동 서점입니다', author:'황보름'},
+    {cat:'의외의 한 권', title:'빙과', author:'요네자와 호노부'}]},
+  FPWD:{name:'포근한 이야기파', desc:'다정한 서사를 아껴가며 읽는 타입', color:'#e3d3b3', books:[
+    {cat:'고전/명작', title:'작은 아씨들', author:'루이자 메이 올컷'},
+    {cat:'현대 화제작', title:'불편한 편의점', author:'김호연'},
+    {cat:'의외의 한 권', title:'미움받을 용기', author:'기시미 이치로·고가 후미타케'}]},
+  FPSR:{name:'눈물의 정주행러', desc:'아파도 몰입해서 끝까지 내달리는 타입', color:'#d9a8a0', books:[
+    {cat:'고전/명작', title:'레 미제라블', author:'빅토르 위고'},
+    {cat:'현대 화제작', title:'종의 기원', author:'정유정'},
+    {cat:'의외의 한 권', title:'밤의 피크닉', author:'온다 리쿠'}]},
+  FPSD:{name:'아릿한 여운파', desc:'슬픈 이야기를 천천히 곱씹는 타입', color:'#c9b3ba', books:[
+    {cat:'고전/명작', title:'테스', author:'토마스 하디'},
+    {cat:'현대 화제작', title:'소년이 온다', author:'한강'},
+    {cat:'의외의 한 권', title:'이처럼 사소한 것들', author:'클레어 키건'}]},
+  FTWR:{name:'위로 문장 흡입러', desc:'다정한 문장을 빠르게 흡수하는 타입', color:'#e8c8a0', books:[
+    {cat:'고전/명작', title:'싯다르타', author:'헤르만 헤세'},
+    {cat:'현대 화제작', title:'죽고 싶지만 떡볶이는 먹고 싶어', author:'백세희'},
+    {cat:'의외의 한 권', title:'달러구트 꿈 백화점', author:'이미예'}]},
+  FTWD:{name:'문장 수집가', desc:'위로되는 문장을 모으고 아끼는 타입', color:'#d7c9a6', books:[
+    {cat:'고전/명작', title:'어린 왕자', author:'앙투안 드 생텍쥐페리'},
+    {cat:'현대 화제작', title:'가녀장의 시대', author:'이슬아'},
+    {cat:'의외의 한 권', title:'왜 나는 너를 사랑하는가', author:'알랭 드 보통'}]},
+  FTSR:{name:'직진 감성러', desc:'뼈 때리는 문장도 몰입해서 빠르게 읽는 타입', color:'#c99b8f', books:[
+    {cat:'고전/명작', title:'지하로부터의 수기', author:'표도르 도스토옙스키'},
+    {cat:'현대 화제작', title:'쇼코의 미소', author:'최은영'},
+    {cat:'의외의 한 권', title:'나미야 잡화점의 기적', author:'히가시노 게이고'}]},
+  FTSD:{name:'밑줄 긋는 직면파', desc:'아픈 문장에 깊이 감정이입하며 천천히 새기는 타입', color:'#b99e9e', books:[
+    {cat:'고전/명작', title:'이방인', author:'알베르 카뮈'},
+    {cat:'현대 화제작', title:'채식주의자', author:'한강'},
+    {cat:'의외의 한 권', title:'피프티 피플', author:'정세랑'}]},
+  GPWR:{name:'가벼운 정주행러', desc:'관찰자 시점으로 편하게 몰아보는 타입', color:'#c7d3c0', books:[
+    {cat:'고전/명작', title:'셜록 홈즈 시리즈', author:'아서 코난 도일'},
+    {cat:'현대 화제작', title:'달러구트 꿈 백화점', author:'이미예'},
+    {cat:'의외의 한 권', title:'죽고 싶지만 떡볶이는 먹고 싶어', author:'백세희'}]},
+  GPWD:{name:'느긋한 힐링파', desc:'관찰하며 잔잔하게 위로받는 이야기를 즐기는 타입', color:'#bcd0c9', books:[
+    {cat:'고전/명작', title:'모모', author:'미하엘 엔데'},
+    {cat:'현대 화제작', title:'시선으로부터,', author:'정세랑'},
+    {cat:'의외의 한 권', title:'일간 이슬아 수필집', author:'이슬아'}]},
+  GPSR:{name:'현실 직진러', desc:'냉정한 현실 이야기를 빠르게 몰아 읽는 타입', color:'#a9b8b0', books:[
+    {cat:'고전/명작', title:'1984', author:'조지 오웰'},
+    {cat:'현대 화제작', title:'7년의 밤', author:'정유정'},
+    {cat:'의외의 한 권', title:'용의자 X의 헌신', author:'히가시노 게이고'}]},
+  GPSD:{name:'묵직한 서사파', desc:'현실을 다룬 이야기를 관찰하며 천천히 소화하는 타입', color:'#98a99f', books:[
+    {cat:'고전/명작', title:'멋진 신세계', author:'올더스 헉슬리'},
+    {cat:'현대 화제작', title:'홀', author:'편혜영'},
+    {cat:'의외의 한 권', title:'로드', author:'코맥 매카시'}]},
+  GTWR:{name:'다정한 탐구러', desc:'위로되는 통찰을 빠르게 찾아 읽는 타입', color:'#c4cfd6', books:[
+    {cat:'고전/명작', title:'무소유', author:'법정'},
+    {cat:'현대 화제작', title:'나는 나로 살기로 했다', author:'김수현'},
+    {cat:'의외의 한 권', title:'아몬드', author:'손원평'}]},
+  GTWD:{name:'잔잔한 사유파', desc:'다정한 문장을 관찰하며 오래 곱씹는 타입', color:'#b3c2cc', books:[
+    {cat:'고전/명작', title:'월든', author:'헨리 데이비드 소로'},
+    {cat:'현대 화제작', title:'불안', author:'알랭 드 보통'},
+    {cat:'의외의 한 권', title:'야간 경비원의 일기', author:'정지돈'}]},
+  GTSR:{name:'냉철한 탐구러', desc:'날카로운 통찰을 빠르게 파고드는 타입', color:'#9fb0bd', books:[
+    {cat:'고전/명작', title:'차라투스트라는 이렇게 말했다', author:'프리드리히 니체'},
+    {cat:'현대 화제작', title:'사피엔스', author:'유발 하라리'},
+    {cat:'의외의 한 권', title:'28', author:'정유정'}]},
+  GTSD:{name:'정독파', desc:'묵직한 문장을 관찰하며 정성껏 읽어내는 타입', color:'#8899a3', books:[
+    {cat:'고전/명작', title:'죄와 벌', author:'표도르 도스토옙스키'},
+    {cat:'현대 화제작', title:'예루살렘의 아이히만', author:'한나 아렌트'},
+    {cat:'의외의 한 권', title:'밝은 밤', author:'최은영'}]}
+};
+
+/* ---------- 유형별 캐릭터 이미지 (모에 스타일, 로컬 파일 참조) ----------
+   힉스필드 CDN URL은 만료될 수 있어서 로컬 파일로 전환함.
+   같은 폴더 안 characters/ 하위에 아래 파일명으로 저장돼 있어야 함.
+   (아직 다운로드 전이면 같이 드린 download_characters.html을 열어서 받으면 됨) ---------- */
+const CHARACTERS = {
+  FPWR: 'characters/FPWR.png',
+  FPWD: 'characters/FPWD.png',
+  FPSR: 'characters/FPSR.png',
+  FPSD: 'characters/FPSD.png',
+  FTWR: 'characters/FTWR.png',
+  FTWD: 'characters/FTWD.png',
+  FTSR: 'characters/FTSR.png',
+  FTSD: 'characters/FTSD.png',
+  GPWR: 'characters/GPWR.png',
+  GPWD: 'characters/GPWD.png',
+  GPSR: 'characters/GPSR.png',
+  GPSD: 'characters/GPSD.png',
+  GTWR: 'characters/GTWR.png',
+  GTWD: 'characters/GTWD.png',
+  GTSR: 'characters/GTSR.png',
+  GTSD: 'characters/GTSD.png'
+};
+
+/* ---------- 유형 마스코트 (축 코드 기반 절차적 SVG, 캐릭터 이미지 로드 실패 시 폴백) ---------- */
+function mascotSVG(code, color, size){
+  size = size || 100;
+  const ink = '#332b22';
+  const c1 = code[0], c2 = code[1], c3 = code[2], c4 = code[3];
+  const eyes = c1 === 'F'
+    ? `<circle cx="42" cy="52" r="6" fill="${ink}"/><circle cx="78" cy="52" r="6" fill="${ink}"/>`
+    : `<rect x="33" y="48" width="20" height="6" rx="3" fill="${ink}"/><rect x="67" y="48" width="20" height="6" rx="3" fill="${ink}"/>`;
+  const mouth = c2 === 'P'
+    ? `<path d="M45 70 Q60 87 75 70" stroke="${ink}" stroke-width="5" fill="none" stroke-linecap="round"/>`
+    : `<path d="M47 73 Q60 77 73 73" stroke="${ink}" stroke-width="5" fill="none" stroke-linecap="round"/>`;
+  const accessory = c3 === 'W'
+    ? `<path d="M92 26 c4-6 13-6 15 1 c2 7 -7 13 -15 20 c-8-7-17-13-15-20 c2-7 11-7 15-1z" fill="#e08a7d"/>`
+    : `<path d="M90 16 l4 9 9 3 -9 3 -4 9 -4-9 -9-3 9-3z" fill="#f4c95d"/>`;
+  const motion = c4 === 'R'
+    ? `<line x1="4" y1="48" x2="20" y2="48" stroke="${ink}" stroke-width="3" stroke-linecap="round" opacity=".45"/><line x1="0" y1="60" x2="18" y2="60" stroke="${ink}" stroke-width="3" stroke-linecap="round" opacity=".3"/>`
+    : `<path d="M16 94 q8-16 22-11" stroke="#3f7d5c" stroke-width="4" fill="none" stroke-linecap="round"/>`;
+  return `<svg viewBox="0 0 120 120" width="${size}" height="${size}" role="img" aria-label="${code} 유형 마스코트">
+    <circle cx="60" cy="60" r="52" fill="${color}"/>
+    ${motion}${eyes}${mouth}${accessory}
+  </svg>`;
+}
+
+/* ---------- 도서 표지 불러오기 ----------
+   1순위: 알라딘 Open API (국내 도서 커버리지 좋음, /aladin-api 프록시 경유)
+   2순위: 구글 북스 API (키 불필요, 국내 도서는 커버리지 약함)
+   둘 다 실패하면 이니셜 타일 그대로 유지
+
+   [중요] TTBKey는 더 이상 이 파일에 없음 — server.js에서만 보관하고
+   서버가 알라딘에 대신 요청해줌. 그래서 이 프록시가 있어야만
+   알라딘 표지를 가져올 수 있음 (server.js 실행 + http://localhost:3000 접속 필요).
+   서버 없이 file://로 열면 알라딘은 건너뛰고 구글 북스만 시도함. ---------- */
+
+function showCover(elId, url){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  const img = el.querySelector('img');
+  img.onload = () => { img.style.display = 'block'; const span = el.querySelector('span'); if(span) span.style.display = 'none'; };
+  img.src = url;
+}
+
+async function aladinSearch(query, queryType){
+  const url = `/aladin-api?query=${encodeURIComponent(query)}&queryType=${queryType}`;
+  const res = await fetch(url);
+  if(!res.ok) return null;
+  const data = await res.json();
+  return data.cover || null;
+}
+
+async function loadCoverAladin(title, author){
+  if(location.protocol.indexOf('http') !== 0) return null; // 서버(프록시) 없이는 알라딘 호출 불가
+  // 1차: 제목+저자 통합검색, 2차: 제목만으로 재시도(시리즈명 등 저자 매칭이 애매한 경우 대비)
+  const combined = await aladinSearch(`${title} ${author}`, 'Keyword');
+  if(combined) return combined;
+  return await aladinSearch(title, 'Title');
+}
+
+async function loadCoverGoogle(title, author){
+  const q = encodeURIComponent(`intitle:${title} inauthor:${author}`);
+  const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=1`);
+  if(!res.ok) return null;
+  const data = await res.json();
+  const thumb = data.items && data.items[0] && data.items[0].volumeInfo.imageLinks && data.items[0].volumeInfo.imageLinks.thumbnail;
+  return thumb ? thumb.replace('http:', 'https:') : null;
+}
+
+async function loadCover(elId, title, author){
+  try{
+    const aladin = await loadCoverAladin(title, author);
+    if(aladin){ showCover(elId, aladin); return; }
+    console.warn('[표지] 알라딘에서 결과 없음:', title);
+  }catch(e){ console.warn('[표지] 알라딘 호출 실패(CORS/네트워크일 가능성):', title, e); }
+  try{
+    const google = await loadCoverGoogle(title, author);
+    if(google){ showCover(elId, google); return; }
+    console.warn('[표지] 구글 북스에서도 결과 없음:', title);
+  }catch(e){ console.warn('[표지] 구글 북스 호출 실패:', title, e); }
+}
+
+/* ---------- 상태 ---------- */
+let answers = new Array(QUESTIONS.length).fill(0);
+let current = -1; // -1 = 인트로, 0~39 = 문항, 40 = 결과
+
+const app = document.getElementById('app');
+
+/* ---------- 채점 ---------- */
+function computeResult(){
+  const sums = {F:0,G:0,P:0,T:0,W:0,S:0,R:0,D:0};
+  const fives = {F:0,G:0,P:0,T:0,W:0,S:0,R:0,D:0};
+  QUESTIONS.forEach((q,i)=>{
+    const v = answers[i];
+    sums[q.pole] += v;
+    if(v === 5) fives[q.pole]++;
+  });
+  function pick(a,b){
+    if(sums[a] !== sums[b]) return sums[a] > sums[b] ? a : b;
+    if(fives[a] !== fives[b]) return fives[a] > fives[b] ? a : b;
+    return a;
+  }
+  let code = '';
+  AXES.forEach(ax => { code += pick(ax.left, ax.right); });
+  return {code, sums};
+}
+
+/* ---------- 렌더 ---------- */
+function renderIntro(){
+  app.innerHTML = `
+    <div class="brand">TEXT TYPE</div>
+    <div class="hero">
+      <div class="mascot-wrap"><img class="mascot-img mascot-lg" src="${CHARACTERS.FPWR}" alt="책 유형 테스트 캐릭터"></div>
+      <h1 class="serif">나는 어떤 책 유형일까?</h1>
+      <p>40개의 질문으로 나의 몰입 방식, 서사 취향, 정서 지향, 리딩 리듬을 진단하고<br>딱 맞는 책 3권을 추천받아보세요.</p>
+      <div class="btnrow"><button class="btn" id="startBtn">테스트 시작하기</button></div>
+    </div>`;
+  document.getElementById('startBtn').onclick = () => { current = 0; renderQuestion(); };
+}
+
+function renderQuestion(){
+  const q = QUESTIONS[current];
+  const pct = Math.round((current) / QUESTIONS.length * 100);
+  app.innerHTML = `
+    <div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>
+    <div class="qmeta">${current+1} / ${QUESTIONS.length}</div>
+    <p class="qtext serif">${q.text}</p>
+    <div class="scale" id="scaleRow">
+      ${[1,2,3,4,5].map(v => `<button data-v="${v}" class="${answers[current]===v?'sel':''}">${v}</button>`).join('')}
+    </div>
+    <div class="scalelabels"><span>전혀 아니다</span><span>매우 그렇다</span></div>
+    <div class="navrow">
+      <button class="btn ghost" id="prevBtn" ${current===0?'disabled style="visibility:hidden"':''}>이전</button>
+      <button class="btn" id="nextBtn" ${answers[current]===0?'disabled style="opacity:.4"':''}>${current===QUESTIONS.length-1?'결과보기':'다음'}</button>
+    </div>`;
+
+  document.querySelectorAll('#scaleRow button').forEach(btn=>{
+    btn.onclick = () => {
+      answers[current] = Number(btn.dataset.v);
+      goNext(true);
+    };
+  });
+  document.getElementById('prevBtn').onclick = () => { if(current>0){ current--; renderQuestion(); } };
+  document.getElementById('nextBtn').onclick = () => goNext(false);
+}
+
+function goNext(fromScale){
+  if(answers[current] === 0) return;
+  if(current === QUESTIONS.length - 1){
+    current = QUESTIONS.length;
+    renderResult();
+  } else {
+    current++;
+    renderQuestion();
+  }
+}
+
+function renderResult(){
+  const {code, sums} = computeResult();
+  showResult(code, sums, false);
+}
+
+// shared: 공유 링크(?type=CODE)로 들어온 경우 true. 이때는 내 답변 기반 게이지가 없으니 숨기고,
+// 대신 "나도 테스트하기" CTA를 크게 보여줌.
+function showResult(code, sums, shared){
+  const type = TYPES[code];
+  app.innerHTML = `
+    <div class="brand">TEXT TYPE 결과</div>
+    <div class="resulthead">
+      <div class="mascot-wrap"><img class="mascot-img mascot-lg" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터" style="background:${type.color};"></div>
+      <div class="code">${code} 유형</div>
+      <h1 class="serif">${type.name}</h1>
+      <p>${type.desc}</p>
+    </div>
+
+    ${shared ? '' : `
+    <div class="card">
+      <div class="gauges">
+        ${AXES.map(ax => {
+          const l = sums[ax.left], r = sums[ax.right];
+          const pct = Math.round(l/(l+r)*100);
+          return `<div>
+            <div class="gauge-label"><span>${ax.leftLabel} ${ax.left}</span><span>${ax.rightLabel} ${ax.right}</span></div>
+            <div class="gauge-track"><div class="gauge-dot" style="left:${pct}%"></div></div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`}
+
+    <div class="sectiontitle">추천 도서 3권</div>
+    <div class="books">
+      ${type.books.map((b,i) => `
+        <div class="book">
+          <div class="cover" id="cover-${i}" style="background:${type.color};">
+            <span>${b.title[0]}</span>
+            <img alt="${b.title} 표지">
+          </div>
+          <p class="cat">${b.cat}</p>
+          <p class="title">${b.title}</p>
+          <p class="author">${b.author}</p>
+        </div>`).join('')}
+    </div>
+
+    <div class="sectiontitle">공유 카드</div>
+    <div class="sharecard" id="shareCard" style="background:${type.color};color:#332b22;">
+      <div class="mascot-wrap"><img class="mascot-img mascot-sm" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터"></div>
+      <div>
+        <div class="tag">TEXT TYPE · ${code}</div>
+        <div class="name serif">${type.name}</div>
+      </div>
+      <div class="desc">${type.desc}</div>
+      <div class="foot"><span>책 유형 테스트</span><span>#텍스트힙</span></div>
+    </div>
+
+    <div class="btnrow" style="margin-top:24px;">
+      ${shared ? `<button class="btn" id="startBtn2">나도 테스트하기</button>` : `
+        <button class="btn ghost" id="saveImgBtn">이미지로 저장</button>
+        <button class="btn ghost" id="copyLinkBtn">링크 복사</button>
+        <button class="btn" id="restartBtn">다시 하기</button>
+      `}
+    </div>`;
+
+  if(shared){
+    document.getElementById('startBtn2').onclick = () => {
+      answers = new Array(QUESTIONS.length).fill(0);
+      current = 0;
+      history.replaceState(null, '', location.pathname); // 주소에서 ?type= 제거
+      renderQuestion();
+    };
+  } else {
+    document.getElementById('restartBtn').onclick = () => {
+      answers = new Array(QUESTIONS.length).fill(0);
+      current = -1;
+      renderIntro();
+    };
+    document.getElementById('copyLinkBtn').onclick = () => {
+      const url = location.href.split('?')[0] + '?type=' + code;
+      navigator.clipboard?.writeText(url).then(()=>{
+        document.getElementById('copyLinkBtn').textContent = '복사됨';
+        setTimeout(()=>{ document.getElementById('copyLinkBtn').textContent = '링크 복사'; }, 1500);
+      });
+    };
+    document.getElementById('saveImgBtn').onclick = () => saveShareImage(type, code);
+  }
+
+  type.books.forEach((b, i) => loadCover(`cover-${i}`, b.title, b.author));
+}
+
+/* ---------- 공유 이미지 저장 (canvas) ---------- */
+function loadImageEl(url){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+async function saveShareImage(type, code){
+  const size = 1080;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = type.color;
+  ctx.fillRect(0,0,size,size);
+
+  // 캐릭터 이미지를 원형으로 그려보고, CORS 등으로 실패하면 절차적 마스코트로 폴백
+  const mx = size - 170, my = 70, mr = 90;
+  try{
+    const img = await loadImageEl(CHARACTERS[code]);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(mx, my, mr, 0, Math.PI*2);
+    ctx.clip();
+    ctx.drawImage(img, mx-mr, my-mr, mr*2, mr*2);
+    ctx.restore();
+  }catch(e){
+    drawMascot(ctx, mx, my, mr, code);
+  }
+
+  ctx.fillStyle = '#332b22';
+  ctx.font = '400 30px sans-serif';
+  ctx.fillText('TEXT TYPE · ' + code, 80, 130);
+
+  ctx.font = '700 84px serif';
+  wrapText(ctx, type.name, 80, 260, 900, 96);
+
+  ctx.font = '400 34px sans-serif';
+  wrapText(ctx, type.desc, 80, size - 220, 900, 46);
+
+  ctx.font = '400 26px sans-serif';
+  ctx.fillText('책 유형 테스트', 80, size - 80);
+  ctx.textAlign = 'right';
+  ctx.fillText('#텍스트힙', size - 80, size - 80);
+  ctx.textAlign = 'left';
+
+  let dataUrl;
+  try{
+    dataUrl = canvas.toDataURL('image/png');
+  }catch(e){
+    // 캔버스가 오염된 경우(taint) 절차적 마스코트로 다시 그려서라도 다운로드는 되게 함
+    ctx.clearRect(mx-mr-4, my-mr-4, mr*2+8, mr*2+8);
+    drawMascot(ctx, mx, my, mr, code);
+    dataUrl = canvas.toDataURL('image/png');
+  }
+
+  const link = document.createElement('a');
+  link.download = `text-type-${code}.png`;
+  link.href = dataUrl;
+  link.click();
+}
+
+function drawMascot(ctx, cx, cy, r, code){
+  const ink = '#332b22';
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,.55)';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = ink;
+  const eyeDx = r*0.34, eyeDy = -r*0.05;
+  if(code[0] === 'F'){
+    ctx.beginPath(); ctx.arc(cx-eyeDx, cy+eyeDy, r*0.09, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+eyeDx, cy+eyeDy, r*0.09, 0, Math.PI*2); ctx.fill();
+  } else {
+    ctx.fillRect(cx-eyeDx-r*0.16, cy+eyeDy-r*0.04, r*0.32, r*0.08);
+    ctx.fillRect(cx+eyeDx-r*0.16, cy+eyeDy-r*0.04, r*0.32, r*0.08);
+  }
+
+  ctx.strokeStyle = ink; ctx.lineWidth = r*0.06; ctx.lineCap = 'round';
+  ctx.beginPath();
+  if(code[1] === 'P'){
+    ctx.moveTo(cx-r*0.28, cy+r*0.28);
+    ctx.quadraticCurveTo(cx, cy+r*0.55, cx+r*0.28, cy+r*0.28);
+  } else {
+    ctx.moveTo(cx-r*0.24, cy+r*0.32);
+    ctx.quadraticCurveTo(cx, cy+r*0.4, cx+r*0.24, cy+r*0.32);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function wrapText(ctx, text, x, y, maxWidth, lineHeight){
+  const words = text.split(' ');
+  let line = '';
+  let curY = y;
+  words.forEach(word => {
+    const test = line + word + ' ';
+    if(ctx.measureText(test).width > maxWidth && line !== ''){
+      ctx.fillText(line, x, curY);
+      line = word + ' ';
+      curY += lineHeight;
+    } else {
+      line = test;
+    }
+  });
+  ctx.fillText(line, x, curY);
+}
+
+/* ---------- 시작 ---------- */
+(function boot(){
+  const sharedCode = new URLSearchParams(location.search).get('type');
+  if(sharedCode && TYPES[sharedCode]){
+    // 공유 링크로 들어온 경우: 내 답변이 없으니 게이지 없이 결과만 보여줌
+    showResult(sharedCode, null, true);
+  } else {
+    renderIntro();
+  }
+})();
+</script>
+</body>
+</html>
