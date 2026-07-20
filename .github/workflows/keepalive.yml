@@ -12,4 +12,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping site
-        run: curl -sS -o /dev/null -w "status: %{http_code}\n" https://book-type-test.onrender.com/ || true
+        run: |
+          curl -sS -o /dev/null -w "status: %{http_code}\n" https://book-type-test.onrender.com/ || true
