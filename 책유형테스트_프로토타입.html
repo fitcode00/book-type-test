@@ -32,6 +32,23 @@
   function trackEvent(name, params){
     try { if (window.gtag) gtag('event', name, params || {}); } catch(e){}
   }
+
+  // 카카오 애드핏 배너 광고 — adfit.kakao.com에서 무료로 가입/심사 후 발급받은
+  // 광고 단위 ID를 아래에 넣으면 바로 작동함. 안 넣으면 광고 영역이 그냥 표시 안 됨(에러 없음).
+  var ADFIT_UNIT_ID = 'DAN-pO34YJRw3xz8fdMn';
+  function renderAdfit(containerId){
+    if (!ADFIT_UNIT_ID) return; // 광고단위 ID 없으면 조용히 아무것도 안 함
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = '<ins class="kakao_ad_area" style="display:none;" ' +
+      'data-ad-unit="' + ADFIT_UNIT_ID + '" data-ad-width="320" data-ad-height="100"></ins>';
+    // SPA라 결과 화면이 여러 번 다시 그려질 수 있어서, 매번 스크립트를 새로 붙여 그때마다 광고 영역을 다시 스캔하게 함
+    var s = document.createElement('script');
+    s.type = 'text/javascript';
+    s.src = '//t1.daumcdn.net/kas/static/ba.min.js';
+    s.async = true;
+    document.body.appendChild(s);
+  }
 </script>
 <style>
   :root{
@@ -101,6 +118,7 @@
   .book .author{font-size:11.5px;color:var(--sub);margin:0;}
   .book .buylink{display:block;margin-top:8px;font-size:11px;font-weight:600;color:var(--accent);text-decoration:none;border:1px solid var(--accent);border-radius:999px;padding:5px 0;text-align:center;}
   .book .buylink:active{opacity:.7;}
+  .adslot{display:flex;justify-content:center;margin:28px 0 0;min-height:0;}
   .sharecard{position:relative;width:280px;aspect-ratio:1/1;margin:0 auto;border-radius:20px;padding:28px;display:flex;flex-direction:column;justify-content:space-between;}
   .sharecard .tag{font-size:11px;opacity:.75;letter-spacing:.06em;margin-bottom:6px;}
   .sharecard .name{font-size:26px;font-weight:700;line-height:1.3;}
@@ -675,7 +693,11 @@ function showResult(code, sums, shared){
         <button class="btn ghost" id="copyLinkBtn">링크 복사</button>
         <button class="btn" id="restartBtn">다시 하기</button>
       `}
-    </div>`;
+    </div>
+
+    <div class="adslot" id="adfitSlot"></div>`;
+
+  renderAdfit('adfitSlot');
 
   if(shared){
     document.getElementById('startBtn2').onclick = () => {
