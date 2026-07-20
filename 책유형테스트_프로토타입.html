@@ -3,7 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>책 유형 테스트</title>
+<title>책 유형 테스트 | 나는 어떤 책 유형일까?</title>
+<meta name="description" content="40개의 질문으로 나의 몰입 방식, 서사 취향, 정서 지향, 리딩 리듬을 진단하고 딱 맞는 책 3권을 추천받아보세요.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="책 유형 테스트 | 나는 어떤 책 유형일까?">
+<meta property="og:description" content="40개의 질문으로 나의 몰입 방식, 서사 취향, 정서 지향, 리딩 리듬을 진단하고 딱 맞는 책 3권을 추천받아보세요.">
+<meta property="og:image" content="https://book-type-test.onrender.com/characters/FPWR.png">
+<meta property="og:url" content="https://book-type-test.onrender.com/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="책 유형 테스트 | 나는 어떤 책 유형일까?">
+<meta name="twitter:description" content="40개의 질문으로 나의 책 유형을 진단하고 딱 맞는 책 3권을 추천받아보세요.">
+<meta name="twitter:image" content="https://book-type-test.onrender.com/characters/FPWR.png">
 <style>
   :root{
     --bg:#faf8f3; --card:#ffffff; --ink:#2b2a26; --sub:#77746b; --line:#e7e2d6; --accent:#c96b4e;
@@ -39,6 +49,29 @@
   .gauge-track{position:relative;height:6px;background:var(--line);border-radius:4px;}
   .gauge-dot{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;background:var(--accent);transform:translate(-50%,-50%);}
   .sectiontitle{font-size:13px;font-weight:600;color:var(--sub);margin:28px 0 12px;}
+  .longdesc{font-size:14.5px;line-height:1.8;color:var(--ink);margin:0;}
+  .traitgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .traitcol{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;}
+  .traitcol h3{font-size:12px;margin:0 0 12px;color:var(--sub);}
+  .traitcol.strength h3{color:#4a7d5c;}
+  .traitcol.weakness h3{color:var(--accent);}
+  .traititem{margin-bottom:12px;}
+  .traititem:last-child{margin-bottom:0;}
+  .traititem .tt{font-size:12.5px;font-weight:600;margin-bottom:3px;}
+  .traititem .dd{font-size:11.5px;color:var(--sub);line-height:1.55;}
+  .envbox{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;font-size:13px;line-height:1.7;color:var(--sub);}
+  .envbox b{color:var(--ink);}
+  .charbox{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;}
+  .charbox .badge{width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:"Noto Serif KR",serif;font-weight:700;font-size:18px;flex-shrink:0;}
+  .charbox .info b{font-size:14px;}
+  .charbox .info p{margin:2px 0 0;font-size:12px;color:var(--sub);}
+  .matchgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .matchcard{border-radius:14px;padding:14px;text-align:center;}
+  .matchcard.good{background:#eef4ee;border:1px solid #cfe0cf;}
+  .matchcard.bad{background:#f5ecec;border:1px solid #e2cccc;}
+  .matchcard .mlabel{font-size:11px;color:var(--sub);margin-bottom:6px;}
+  .matchcard .mname{font-size:14px;font-weight:600;}
+  .matchcard .mcode{font-size:11px;color:var(--sub);margin-top:2px;}
   .books{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
   .book{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;}
   .book .cover{position:relative;aspect-ratio:3/4;border-radius:6px;margin-bottom:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#fff;font-family:"Noto Serif KR",serif;font-size:26px;font-weight:700;}
@@ -46,6 +79,8 @@
   .book .cat{font-size:10px;color:var(--accent);margin:0 0 4px;}
   .book .title{font-size:12.5px;font-weight:600;margin:0 0 2px;line-height:1.35;}
   .book .author{font-size:11.5px;color:var(--sub);margin:0;}
+  .book .buylink{display:block;margin-top:8px;font-size:11px;font-weight:600;color:var(--accent);text-decoration:none;border:1px solid var(--accent);border-radius:999px;padding:5px 0;text-align:center;}
+  .book .buylink:active{opacity:.7;}
   .sharecard{position:relative;width:280px;aspect-ratio:1/1;margin:0 auto;border-radius:20px;padding:28px;display:flex;flex-direction:column;justify-content:space-between;}
   .sharecard .tag{font-size:11px;opacity:.75;letter-spacing:.06em;margin-bottom:6px;}
   .sharecard .name{font-size:26px;font-weight:700;line-height:1.3;}
@@ -118,67 +153,147 @@ const TYPES = {
   FPWR:{name:'정주행 위로러', desc:'몰입해서 술술 읽히는 이야기로 위로받는 타입', color:'#e7c9a9', books:[
     {cat:'고전/명작', title:'빨간 머리 앤', author:'루시 모드 몽고메리'},
     {cat:'현대 화제작', title:'어서 오세요, 휴남동 서점입니다', author:'황보름'},
-    {cat:'의외의 한 권', title:'빙과', author:'요네자와 호노부'}]},
+    {cat:'의외의 한 권', title:'빙과', author:'요네자와 호노부'}],
+    longDesc:'당신은 책을 펴는 순간 그 세계 속으로 곧장 들어가는 사람입니다. 인물의 기쁨과 슬픔을 내 일처럼 느끼고, 다음 장이 궁금해서 도저히 손에서 책을 놓지 못하죠. 힘든 하루를 보낸 날일수록 이야기 속으로 도망치듯 빠져들어, 마지막 페이지를 덮을 때쯤엔 마음이 한결 가벼워져 있는 걸 발견하는 타입입니다.',
+    strengths:[{t:'몰입력',d:'책을 펴면 몇 시간이 순식간에 지나갈 만큼 빠르게 이야기에 빠져듭니다.'},{t:'공감 능력',d:'등장인물의 감정을 내 것처럼 느끼며 읽어서, 어떤 책이든 훨씬 진하게 남습니다.'},{t:'회복 탄력성',d:'힘든 날에도 책 한 권으로 기분을 전환할 줄 아는 자기만의 회복법을 갖고 있습니다.'}],
+    weaknesses:[{t:'슬픈 결말 취약',d:'너무 몰입한 나머지 새드엔딩을 마주하면 며칠을 여운에서 못 헤어나올 수 있어요.'},{t:'다독 편식',d:'위로가 되는 익숙한 장르만 반복해서 찾다 보니 새로운 장르 도전은 뒷전이 되기 쉽습니다.'},{t:'완독 강박',d:'재미없어도 몰입해 시작한 책은 끝까지 읽어야 직성이 풀려 시간을 뺏길 때가 있습니다.'}],
+    env:'이불 속, 침대 위, 혹은 카페 구석 자리 — 방해받지 않고 몰입할 수 있는 조용한 개인 공간',
+    match:{good:'FPWD',bad:'GTSD'}, character:{name:'앤 셜리', book:'빨간 머리 앤'}},
   FPWD:{name:'포근한 이야기파', desc:'다정한 서사를 아껴가며 읽는 타입', color:'#e3d3b3', books:[
     {cat:'고전/명작', title:'작은 아씨들', author:'루이자 메이 올컷'},
     {cat:'현대 화제작', title:'불편한 편의점', author:'김호연'},
-    {cat:'의외의 한 권', title:'미움받을 용기', author:'기시미 이치로·고가 후미타케'}]},
+    {cat:'의외의 한 권', title:'미움받을 용기', author:'기시미 이치로·고가 후미타케'}],
+    longDesc:'이야기에 폭 빠져드는 건 마찬가지지만, 당신은 서두르지 않습니다. 좋아하는 장면은 몇 번이고 다시 읽고, 마음에 남는 한 문장은 접어두거나 필사해두죠. 다정한 이야기를 마치 오랜 친구를 만나듯 천천히, 아껴가며 즐기는 편입니다.',
+    strengths:[{t:'깊은 여운',d:'한 장면 한 장면을 곱씹으며 읽어서 책이 끝나도 오래도록 마음에 남습니다.'},{t:'재독의 즐거움',d:'좋아하는 책은 여러 번 다시 읽으며 매번 새로운 걸 발견하는 재주가 있습니다.'},{t:'따뜻한 취향 공유',d:'다정한 책을 잘 골라내서, 주변 사람들에게 위로되는 책을 추천하는 데 능합니다.'}],
+    weaknesses:[{t:'완독까지 오래 걸림',d:'천천히 음미하다 보니 신간이나 화제작을 남들보다 늦게 읽게 됩니다.'},{t:'긴장감 있는 전개엔 약함',d:'빠른 스릴러나 급박한 전개보다는 잔잔한 이야기에 손이 먼저 갑니다.'},{t:'낯선 장르 진입 장벽',d:'익숙하고 편안한 분위기의 책만 고르는 편이라 낯선 장르는 진입이 오래 걸립니다.'}],
+    env:'주말 오후 햇살 드는 창가, 따뜻한 차 한 잔과 함께 여유롭게',
+    match:{good:'FPWR',bad:'GTSR'}, character:{name:'조 마치', book:'작은 아씨들'}},
   FPSR:{name:'눈물의 정주행러', desc:'아파도 몰입해서 끝까지 내달리는 타입', color:'#d9a8a0', books:[
     {cat:'고전/명작', title:'레 미제라블', author:'빅토르 위고'},
     {cat:'현대 화제작', title:'종의 기원', author:'정유정'},
-    {cat:'의외의 한 권', title:'밤의 피크닉', author:'온다 리쿠'}]},
+    {cat:'의외의 한 권', title:'밤의 피크닉', author:'온다 리쿠'}],
+    longDesc:'아픈 이야기라고 피하지 않습니다. 오히려 인물이 겪는 고통과 진실을 온몸으로 느끼며 끝까지 내달리는 타입이죠. 눈물이 나도 멈추지 않고 몰아 읽는 이유는, 그 이야기가 결국 나에게 어떤 진실을 보여줄지 끝까지 확인하고 싶기 때문입니다.',
+    strengths:[{t:'뜨거운 몰입',d:'무거운 주제도 피하지 않고 끝까지 밀도 있게 읽어냅니다.'},{t:'서사적 용기',d:'불편하거나 슬픈 이야기 앞에서도 도망치지 않고 정면으로 마주합니다.'},{t:'강렬한 카타르시스',d:'다 읽고 난 뒤 눈물과 함께 오는 해방감을 즐길 줄 압니다.'}],
+    weaknesses:[{t:'감정 소모가 큼',d:'몰입도가 높은 만큼 다 읽고 나면 한동안 감정적으로 지칠 수 있습니다.'},{t:'가벼운 책은 심심함',d:'갈등이 약한 잔잔한 이야기는 상대적으로 지루하게 느껴질 수 있어요.'},{t:'연속 다크 콘텐츠 과다',d:'무거운 책만 연달아 읽다 보면 번아웃이 올 수 있습니다.'}],
+    env:'방해 없이 끝까지 몰아칠 수 있는 늦은 밤, 혹은 긴 이동 시간',
+    match:{good:'FPSD',bad:'GTWD'}, character:{name:'장발장', book:'레 미제라블'}},
   FPSD:{name:'아릿한 여운파', desc:'슬픈 이야기를 천천히 곱씹는 타입', color:'#c9b3ba', books:[
     {cat:'고전/명작', title:'테스', author:'토마스 하디'},
     {cat:'현대 화제작', title:'소년이 온다', author:'한강'},
-    {cat:'의외의 한 권', title:'이처럼 사소한 것들', author:'클레어 키건'}]},
+    {cat:'의외의 한 권', title:'이처럼 사소한 것들', author:'클레어 키건'}],
+    longDesc:'슬프고 무거운 이야기일수록 천천히, 곱씹으며 읽습니다. 한 문장이 마음을 찌르면 잠시 책을 덮고 그 감정을 충분히 느낀 뒤에야 다음 페이지로 넘어가죠. 당신에게 독서는 빠르게 소비하는 게 아니라, 슬픔까지도 오래 곁에 두고 이해하는 과정입니다.',
+    strengths:[{t:'섬세한 해석력',d:'문장 하나, 장면 하나에 담긴 의미를 놓치지 않고 곱씹어 읽습니다.'},{t:'몰입과 사유의 공존',d:'감정이입하면서도 그 감정의 이유를 함께 들여다보는 균형 감각이 있습니다.'},{t:'긴 여운을 즐김',d:'책을 덮고 난 뒤에도 그 세계에 오래 머무르는 걸 좋아합니다.'}],
+    weaknesses:[{t:'완독 속도가 느림',d:'한 권을 다 읽는 데 시간이 꽤 걸리는 편이라 다독은 어려울 수 있습니다.'},{t:'감정적 소진',d:'슬픈 이야기를 오래 곱씹다 보니 마음이 지칠 때가 있습니다.'},{t:'가벼운 오락물엔 흥미 저하',d:'깊이가 얕게 느껴지는 책은 쉽게 흥미를 잃습니다.'}],
+    env:'혼자만의 조용한 저녁, 노트나 메모장을 옆에 두고',
+    match:{good:'FPSR',bad:'GTWR'}, character:{name:'테스 더비필드', book:'테스'}},
   FTWR:{name:'위로 문장 흡입러', desc:'다정한 문장을 빠르게 흡수하는 타입', color:'#e8c8a0', books:[
     {cat:'고전/명작', title:'싯다르타', author:'헤르만 헤세'},
     {cat:'현대 화제작', title:'죽고 싶지만 떡볶이는 먹고 싶어', author:'백세희'},
-    {cat:'의외의 한 권', title:'달러구트 꿈 백화점', author:'이미예'}]},
+    {cat:'의외의 한 권', title:'달러구트 꿈 백화점', author:'이미예'}],
+    longDesc:'이야기 자체보다 문장이 주는 위로에 먼저 반응합니다. 좋은 문장을 만나면 마음이 몽글몽글해지고, 그런 문장을 빠르게 계속 찾아 읽고 싶어져서 손에서 책을 놓지 못하죠. 짧은 시간에 많은 위로를 흡수하고 싶은, 효율적인 마음 챙김형 독서가입니다.',
+    strengths:[{t:'빠른 흡수력',d:'짧은 시간 안에도 여러 권의 위로가 되는 문장을 빠르게 소화합니다.'},{t:'감정 회복 속도',d:'문장 몇 줄만으로도 기분을 빠르게 전환하는 나만의 방법을 압니다.'},{t:'좋은 문장 감별력',d:'마음에 남을 문장을 귀신같이 잘 골라냅니다.'}],
+    weaknesses:[{t:'깊은 사유는 건너뜀',d:'빠르게 읽다 보니 문장 뒤에 숨은 더 깊은 의미는 놓치기 쉽습니다.'},{t:'자기 위로용 편식',d:'위로되는 에세이류만 반복해서 찾느라 소설이나 묵직한 책은 뒷전이 됩니다.'},{t:'금방 잊혀짐',d:'빠르게 많이 읽는 만큼, 시간이 지나면 내용이 잘 기억나지 않을 수 있어요.'}],
+    env:'출퇴근길, 짧은 틈새 시간에 가볍게 펼쳐 드는 책',
+    match:{good:'FTWD',bad:'GPSD'}, character:{name:'싯다르타', book:'싯다르타'}},
   FTWD:{name:'문장 수집가', desc:'위로되는 문장을 모으고 아끼는 타입', color:'#d7c9a6', books:[
     {cat:'고전/명작', title:'어린 왕자', author:'앙투안 드 생텍쥐페리'},
     {cat:'현대 화제작', title:'가녀장의 시대', author:'이슬아'},
-    {cat:'의외의 한 권', title:'왜 나는 너를 사랑하는가', author:'알랭 드 보통'}]},
+    {cat:'의외의 한 권', title:'왜 나는 너를 사랑하는가', author:'알랭 드 보통'}],
+    longDesc:'마음에 드는 문장을 만나면 밑줄을 긋고, 필사하고, 오래 곱씹습니다. 당신에게 책 한 권은 완독의 대상이 아니라 좋은 문장을 캐내는 광산 같은 존재죠. 서두르지 않고 한 문장 한 문장을 아껴 읽으며, 나만의 문장 수집을 늘려가는 걸 즐깁니다.',
+    strengths:[{t:'문장 큐레이션',d:'마음에 남는 문장을 모으고 정리하는 자기만의 아카이브가 있습니다.'},{t:'깊은 사유',d:'짧은 문장 하나에서도 여러 겹의 의미를 발견해냅니다.'},{t:'꾸준한 위로의 루틴',d:'매일 조금씩이라도 좋은 문장을 곁에 두는 습관을 유지합니다.'}],
+    weaknesses:[{t:'완독까지 오래 걸림',d:'문장 하나하나를 아끼다 보니 책 한 권을 끝내는 데 시간이 오래 걸립니다.'},{t:'줄거리 요약은 약함',d:'인상 깊은 문장은 잘 기억해도 전체 줄거리는 가물가물할 때가 있습니다.'},{t:'속도감 있는 책엔 지루함',d:'전개가 빠른 책은 오히려 답답하게 느껴질 수 있습니다.'}],
+    env:'혼자만의 책상, 필사 노트와 펜을 곁에 두고',
+    match:{good:'FTWR',bad:'GPSR'}, character:{name:'어린 왕자', book:'어린 왕자'}},
   FTSR:{name:'직진 감성러', desc:'뼈 때리는 문장도 몰입해서 빠르게 읽는 타입', color:'#c99b8f', books:[
     {cat:'고전/명작', title:'지하로부터의 수기', author:'표도르 도스토옙스키'},
     {cat:'현대 화제작', title:'쇼코의 미소', author:'최은영'},
-    {cat:'의외의 한 권', title:'나미야 잡화점의 기적', author:'히가시노 게이고'}]},
+    {cat:'의외의 한 권', title:'나미야 잡화점의 기적', author:'히가시노 게이고'}],
+    longDesc:'뼈 때리는 문장 앞에서도 눈 돌리지 않습니다. 오히려 그 날카로움에 이끌려 더 몰입해서 빠르게 읽어 내려가죠. 당신에게 독서는 위로보다 각성에 가깝습니다 — 불편한 진실을 마주하면서도, 속도감 있게 그 안으로 파고드는 타입입니다.',
+    strengths:[{t:'몰입한 직면력',d:'불편한 문장 앞에서도 피하지 않고 감정을 그대로 마주합니다.'},{t:'빠른 통찰 흡수',d:'날카로운 문장의 핵심을 빠르게 캐치해냅니다.'},{t:'솔직한 감정 표현',d:'책에서 느낀 걸 꾸밈없이 바로 표현하는 편입니다.'}],
+    weaknesses:[{t:'감정 과부하',d:'센 문장을 연달아 흡수하다 보면 감정적으로 쉽게 지칠 수 있습니다.'},{t:'여운을 곱씹을 틈이 부족',d:'빠르게 읽고 넘어가느라 문장을 충분히 되새길 시간이 부족합니다.'},{t:'가벼운 책엔 시시함',d:'자극이 약한 책은 금방 흥미를 잃습니다.'}],
+    env:'집중이 잘 되는 카페나 독서실, 짧고 굵게 몰아 읽는 시간',
+    match:{good:'FTSD',bad:'GPWD'}, character:{name:'지하생활자', book:'지하로부터의 수기'}},
   FTSD:{name:'밑줄 긋는 직면파', desc:'아픈 문장에 깊이 감정이입하며 천천히 새기는 타입', color:'#b99e9e', books:[
     {cat:'고전/명작', title:'이방인', author:'알베르 카뮈'},
     {cat:'현대 화제작', title:'채식주의자', author:'한강'},
-    {cat:'의외의 한 권', title:'피프티 피플', author:'정세랑'}]},
+    {cat:'의외의 한 권', title:'피프티 피플', author:'정세랑'}],
+    longDesc:'아픈 문장일수록 오래 머뭅니다. 밑줄을 긋고, 왜 이 문장이 나를 흔들었는지 곰곰이 생각해보죠. 불편한 진실을 피하지 않으면서도 서두르지 않는 당신은, 책을 통해 스스로를 천천히 들여다보는 사람입니다.',
+    strengths:[{t:'깊은 자기 성찰',d:'책 속 문장을 통해 자신의 감정과 생각을 깊이 들여다봅니다.'},{t:'진지한 몰입',d:'무겁고 어려운 주제도 회피하지 않고 끝까지 파고듭니다.'},{t:'밑줄의 힘',d:'인상 깊은 문장을 표시하고 기록하는 습관이 잘 잡혀 있습니다.'}],
+    weaknesses:[{t:'완독 속도 느림',d:'한 문장에 오래 머무르다 보니 책 한 권을 끝내는 데 시간이 걸립니다.'},{t:'무거운 감정의 축적',d:'어두운 주제를 오래 곱씹다 보면 마음이 가라앉을 때가 있습니다.'},{t:'가벼운 오락서엔 심드렁',d:'깊이가 없다고 느껴지는 책은 쉽게 손이 안 갑니다.'}],
+    env:'조용한 밤, 여백에 메모할 수 있는 노트와 함께',
+    match:{good:'FTSR',bad:'GPWR'}, character:{name:'뫼르소', book:'이방인'}},
   GPWR:{name:'가벼운 정주행러', desc:'관찰자 시점으로 편하게 몰아보는 타입', color:'#c7d3c0', books:[
     {cat:'고전/명작', title:'셜록 홈즈 시리즈', author:'아서 코난 도일'},
     {cat:'현대 화제작', title:'달러구트 꿈 백화점', author:'이미예'},
-    {cat:'의외의 한 권', title:'죽고 싶지만 떡볶이는 먹고 싶어', author:'백세희'}]},
+    {cat:'의외의 한 권', title:'죽고 싶지만 떡볶이는 먹고 싶어', author:'백세희'}],
+    longDesc:'이야기 속 인물에 완전히 몰입하기보다, 한 발짝 떨어져서 전개를 관찰하며 즐깁니다. 대신 속도는 절대 늦추지 않죠. 다음 사건이 궁금해서 페이지를 계속 넘기고, 편안한 분위기의 이야기를 부담 없이 빠르게 정주행하는 타입입니다.',
+    strengths:[{t:'냉정한 관찰력',d:'감정에 휩쓸리지 않고 이야기 구조와 전개를 객관적으로 파악합니다.'},{t:'빠른 스토리 흡수',d:'전개가 궁금해서 책장을 술술 넘기며 빠르게 완독합니다.'},{t:'가벼운 마음의 여유',d:'무겁게 받아들이지 않고 이야기 자체를 편하게 즐길 줄 압니다.'}],
+    weaknesses:[{t:'감정적 여운은 약함',d:'몰입도가 낮은 만큼 다 읽고 나서 기억에 오래 남지 않을 수 있습니다.'},{t:'깊은 주제는 스킵',d:'재미가 우선이라 무겁고 진지한 주제는 잘 손이 안 갑니다.'},{t:'속독 후 휘발',d:'빠르게 읽는 만큼 세부 내용은 금방 잊어버리는 편입니다.'}],
+    env:'이동 중이나 짧은 휴식 시간, 가볍게 펼쳐 드는 페이퍼백',
+    match:{good:'GPWD',bad:'FTSD'}, character:{name:'셜록 홈즈', book:'셜록 홈즈 시리즈'}},
   GPWD:{name:'느긋한 힐링파', desc:'관찰하며 잔잔하게 위로받는 이야기를 즐기는 타입', color:'#bcd0c9', books:[
     {cat:'고전/명작', title:'모모', author:'미하엘 엔데'},
     {cat:'현대 화제작', title:'시선으로부터,', author:'정세랑'},
-    {cat:'의외의 한 권', title:'일간 이슬아 수필집', author:'이슬아'}]},
+    {cat:'의외의 한 권', title:'일간 이슬아 수필집', author:'이슬아'}],
+    longDesc:'이야기를 관찰자의 시선으로 조용히 지켜보며, 서두르지 않고 잔잔하게 위로받습니다. 큰 사건보다는 소소한 일상, 다정한 관계가 그려지는 이야기를 좋아하고, 한 챕터씩 아껴가며 읽는 여유를 즐깁니다.',
+    strengths:[{t:'잔잔한 몰입',d:'감정에 휩쓸리지 않으면서도 이야기의 결을 세심하게 느낍니다.'},{t:'여유로운 독서 습관',d:'서두르지 않고 자기만의 속도로 꾸준히 읽어 나갑니다.'},{t:'따뜻한 이야기 감별력',d:'소소하지만 다정한 이야기를 잘 찾아냅니다.'}],
+    weaknesses:[{t:'긴박한 전개엔 흥미 저하',d:'스릴 넘치는 전개보다는 잔잔한 이야기를 선호해 자극적인 책은 지루할 수 있습니다.'},{t:'완독까지 오래 걸림',d:'천천히 음미하는 편이라 신간을 빠르게 따라가긴 어렵습니다.'},{t:'몰입도가 낮은 편',d:'관찰자 시점이라 인물에 깊이 이입하는 재미는 상대적으로 덜합니다.'}],
+    env:'한적한 오후, 창밖 풍경이 보이는 자리에서 천천히',
+    match:{good:'GPWR',bad:'FTSR'}, character:{name:'모모', book:'모모'}},
   GPSR:{name:'현실 직진러', desc:'냉정한 현실 이야기를 빠르게 몰아 읽는 타입', color:'#a9b8b0', books:[
     {cat:'고전/명작', title:'1984', author:'조지 오웰'},
     {cat:'현대 화제작', title:'7년의 밤', author:'정유정'},
-    {cat:'의외의 한 권', title:'용의자 X의 헌신', author:'히가시노 게이고'}]},
+    {cat:'의외의 한 권', title:'용의자 X의 헌신', author:'히가시노 게이고'}],
+    longDesc:'냉정한 시선으로 현실을 담은 이야기를 관찰하면서도, 전개가 궁금해 손을 멈추지 못합니다. 불편한 진실이나 사회 문제를 다루는 이야기도 거리를 두고 분석하며 빠르게 읽어내는, 냉철하면서도 몰아치는 독서가입니다.',
+    strengths:[{t:'냉철한 현실 감각',d:'불편한 현실도 감정에 치우치지 않고 객관적으로 받아들입니다.'},{t:'빠른 전개 흡수',d:'긴장감 있는 전개를 빠른 속도로 따라가며 몰입합니다.'},{t:'날카로운 분석력',d:'이야기 속 사회 구조나 인물의 동기를 예리하게 파악합니다.'}],
+    weaknesses:[{t:'감정적 여운 부족',d:'거리를 두고 읽다 보니 이야기가 끝나도 감정적으로 크게 남지 않을 수 있습니다.'},{t:'냉소적으로 흐르기 쉬움',d:'현실을 다루는 책만 계속 읽다 보면 시각이 다소 냉소적이 될 수 있습니다.'},{t:'힐링물엔 흥미 저하',d:'잔잔하고 따뜻한 이야기는 상대적으로 심심하게 느껴질 수 있습니다.'}],
+    env:'집중해서 몰아 읽을 수 있는 늦은 밤이나 주말',
+    match:{good:'GPSD',bad:'FTWD'}, character:{name:'윈스턴 스미스', book:'1984'}},
   GPSD:{name:'묵직한 서사파', desc:'현실을 다룬 이야기를 관찰하며 천천히 소화하는 타입', color:'#98a99f', books:[
     {cat:'고전/명작', title:'멋진 신세계', author:'올더스 헉슬리'},
     {cat:'현대 화제작', title:'홀', author:'편혜영'},
-    {cat:'의외의 한 권', title:'로드', author:'코맥 매카시'}]},
+    {cat:'의외의 한 권', title:'로드', author:'코맥 매카시'}],
+    longDesc:'현실의 무게를 다룬 이야기를 관찰자의 시선으로 천천히 소화합니다. 서두르지 않고 한 장면 한 장면을 곱씹으며, 이야기가 보여주는 현실의 단면을 깊이 이해하려는 편입니다. 묵직한 주제일수록 오히려 몰입해서 읽어냅니다.',
+    strengths:[{t:'깊은 이해력',d:'이야기 속 현실과 구조를 시간을 들여 제대로 이해하려 합니다.'},{t:'냉철한 통찰',d:'감정에 휩쓸리지 않고 이야기가 던지는 질문을 객관적으로 곱씹습니다.'},{t:'묵직한 주제에 강함',d:'무겁고 어두운 주제일수록 더 진지하게 파고드는 편입니다.'}],
+    weaknesses:[{t:'완독 속도가 매우 느림',d:'천천히 소화하는 편이라 책 한 권을 끝내는 데 오래 걸립니다.'},{t:'가벼운 이야기엔 흥미 저하',d:'깊이가 부족하다고 느껴지는 책은 손이 잘 안 갑니다.'},{t:'감정적 거리감',d:'관찰자적 태도 때문에 이야기에 완전히 몰입하는 재미는 상대적으로 덜합니다.'}],
+    env:'방해받지 않는 조용한 서재나 도서관 같은 공간',
+    match:{good:'GPSR',bad:'FTWR'}, character:{name:'버나드 막스', book:'멋진 신세계'}},
   GTWR:{name:'다정한 탐구러', desc:'위로되는 통찰을 빠르게 찾아 읽는 타입', color:'#c4cfd6', books:[
     {cat:'고전/명작', title:'무소유', author:'법정'},
     {cat:'현대 화제작', title:'나는 나로 살기로 했다', author:'김수현'},
-    {cat:'의외의 한 권', title:'아몬드', author:'손원평'}]},
+    {cat:'의외의 한 권', title:'아몬드', author:'손원평'}],
+    longDesc:'위로가 되는 통찰을 빠르게 찾아 흡수합니다. 감정에 깊이 이입하기보다는 한 발짝 떨어져서, 삶에 도움이 되는 문장과 생각을 효율적으로 찾아 읽는 편이죠. 마음을 다독여주는 인사이트를 빠르게 발견하고 싶어하는 타입입니다.',
+    strengths:[{t:'실용적인 통찰력',d:'책에서 삶에 바로 적용할 수 있는 인사이트를 빠르게 골라냅니다.'},{t:'긍정적인 태도',d:'위로가 되는 관점을 찾아 스스로를 다독이는 데 능숙합니다.'},{t:'빠른 정보 흡수',d:'필요한 통찰을 효율적으로, 빠르게 찾아 읽습니다.'}],
+    weaknesses:[{t:'깊이보다 속도 우선',d:'빠르게 훑다 보니 한 개념을 깊이 파고드는 건 상대적으로 약합니다.'},{t:'감정적 몰입은 약함',d:'이야기에 깊이 공감하기보다 정보로 받아들이는 경향이 있습니다.'},{t:'자기계발서 편식',d:'비슷한 톤의 위로형 인사이트만 반복해서 찾을 수 있습니다.'}],
+    env:'아침 출근길이나 짧은 짬, 효율적으로 인사이트를 흡수하는 시간',
+    match:{good:'GTWD',bad:'FPSD'}, character:{name:'윤재', book:'아몬드'}},
   GTWD:{name:'잔잔한 사유파', desc:'다정한 문장을 관찰하며 오래 곱씹는 타입', color:'#b3c2cc', books:[
     {cat:'고전/명작', title:'월든', author:'헨리 데이비드 소로'},
     {cat:'현대 화제작', title:'불안', author:'알랭 드 보통'},
-    {cat:'의외의 한 권', title:'야간 경비원의 일기', author:'정지돈'}]},
+    {cat:'의외의 한 권', title:'야간 경비원의 일기', author:'정지돈'}],
+    longDesc:'다정한 문장을 관찰자의 시선으로 천천히 곱씹습니다. 위로가 되는 통찰을 서두르지 않고 오래 되새기며, 그 의미를 나만의 방식으로 소화하는 걸 좋아하죠. 조용히 사유하며 스스로를 다독이는 시간을 소중히 여기는 타입입니다.',
+    strengths:[{t:'깊은 사유력',d:'문장 하나에 담긴 여러 의미를 천천히, 제대로 곱씹습니다.'},{t:'차분한 자기 위로',d:'서두르지 않고 스스로를 다독이는 자기만의 리듬이 있습니다.'},{t:'균형 잡힌 시각',d:'감정에 치우치지 않으면서도 따뜻한 관점을 유지합니다.'}],
+    weaknesses:[{t:'완독 속도 느림',d:'천천히 곱씹는 편이라 책 한 권을 끝내는 데 시간이 걸립니다.'},{t:'몰입감은 상대적으로 약함',d:'관찰자적 태도 때문에 이야기에 확 빠져드는 재미는 덜한 편입니다.'},{t:'변화에 소극적',d:'익숙한 톤의 책만 찾다 보면 새로운 스타일에 도전하기 어려울 수 있습니다.'}],
+    env:'조용한 저녁, 방해 없이 혼자 사유할 수 있는 시간',
+    match:{good:'GTWR',bad:'FPSR'}, character:{name:'에밀 싱클레어', book:'데미안'}},
   GTSR:{name:'냉철한 탐구러', desc:'날카로운 통찰을 빠르게 파고드는 타입', color:'#9fb0bd', books:[
     {cat:'고전/명작', title:'차라투스트라는 이렇게 말했다', author:'프리드리히 니체'},
     {cat:'현대 화제작', title:'사피엔스', author:'유발 하라리'},
-    {cat:'의외의 한 권', title:'28', author:'정유정'}]},
+    {cat:'의외의 한 권', title:'28', author:'정유정'}],
+    longDesc:'날카로운 통찰을 빠르게 파고듭니다. 불편한 진실이든 어려운 개념이든 피하지 않고, 관찰자의 냉정한 시선으로 핵심을 빠르게 캐치해내는 편이죠. 당신에게 독서는 세상을 더 명확하게 이해하기 위한 도구에 가깝습니다.',
+    strengths:[{t:'날카로운 분석력',d:'복잡한 개념도 핵심을 빠르게 파악해냅니다.'},{t:'현실 직시 능력',d:'불편한 진실 앞에서도 흔들리지 않고 냉정하게 받아들입니다.'},{t:'빠른 학습 속도',d:'어려운 책도 속도감 있게 읽어내며 지식을 흡수합니다.'}],
+    weaknesses:[{t:'감정적 공감은 약함',d:'논리와 통찰 위주로 읽다 보니 감정적인 이야기는 상대적으로 덜 와닿을 수 있습니다.'},{t:'과도한 비판적 시선',d:'모든 걸 분석하려다 보면 순수하게 즐기는 독서가 줄어들 수 있습니다.'},{t:'가벼운 이야기엔 시시함',d:'깊이가 얕은 책은 금방 흥미를 잃습니다.'}],
+    env:'집중력이 높은 아침이나, 방해 없는 독립된 공간',
+    match:{good:'GTSD',bad:'FPWD'}, character:{name:'차라투스트라', book:'차라투스트라는 이렇게 말했다'}},
   GTSD:{name:'정독파', desc:'묵직한 문장을 관찰하며 정성껏 읽어내는 타입', color:'#8899a3', books:[
     {cat:'고전/명작', title:'죄와 벌', author:'표도르 도스토옙스키'},
     {cat:'현대 화제작', title:'예루살렘의 아이히만', author:'한나 아렌트'},
-    {cat:'의외의 한 권', title:'밝은 밤', author:'최은영'}]}
+    {cat:'의외의 한 권', title:'밝은 밤', author:'최은영'}],
+    longDesc:'묵직한 문장을 관찰자의 시선으로 정성껏 읽어냅니다. 서두르지 않고 한 문장, 한 단락을 제대로 이해하고 넘어가는 편이라, 어렵고 무거운 책도 끝까지 정독해내는 뚝심이 있습니다. 당신에게 독서는 빠르게 소비하는 게 아니라 제대로 이해하는 과정입니다.',
+    strengths:[{t:'깊은 이해력',d:'어려운 책도 끝까지 제대로 이해하고 넘어가는 뚝심이 있습니다.'},{t:'냉철한 통찰',d:'감정에 치우치지 않고 문장이 담은 의미를 객관적으로 파고듭니다.'},{t:'꾸준한 정독 습관',d:'속도보다 완성도를 중시하는 자기만의 독서 원칙이 있습니다.'}],
+    weaknesses:[{t:'완독까지 매우 오래 걸림',d:'정독하는 편이라 한 권을 끝내는 데 시간이 많이 걸립니다.'},{t:'가벼운 책은 심심함',d:'깊이가 부족하다고 느껴지는 책은 흥미가 잘 안 생깁니다.'},{t:'감정적 거리감',d:'관찰자적 태도 때문에 이야기에 정서적으로 확 빠지긴 어려운 편입니다.'}],
+    env:'방해받지 않는 조용한 서재, 충분한 시간이 확보된 주말',
+    match:{good:'GTSR',bad:'FPWR'}, character:{name:'라스콜니코프', book:'죄와 벌'}}
 };
 
 /* ---------- 유형별 캐릭터 이미지 (모에 스타일, 로컬 파일 참조) ----------
@@ -299,6 +414,16 @@ async function loadCoversManifest(){
   }catch(e){ /* covers.json 없으면 실시간 API로만 동작 */ }
 }
 
+// 알라딘 TTB 제휴 구매링크 매니페스트 (fetch_covers.js로 생성, links.json).
+// 없으면 구매 버튼을 안 보여줌 (링크 없이 걸면 제휴 추적이 안 되므로).
+let LOCAL_LINKS = {};
+async function loadLinksManifest(){
+  try{
+    const res = await fetch('links.json');
+    if(res.ok) LOCAL_LINKS = await res.json();
+  }catch(e){ /* links.json 없으면 구매 버튼 미노출 */ }
+}
+
 /* ---------- 채점 ---------- */
 function computeResult(){
   const sums = {F:0,G:0,P:0,T:0,W:0,S:0,R:0,D:0};
@@ -400,10 +525,49 @@ function showResult(code, sums, shared){
       </div>
     </div>`}
 
+    <div class="sectiontitle">이 유형은</div>
+    <p class="longdesc">${type.longDesc}</p>
+
+    <div class="sectiontitle" style="margin-top:24px;">독서 강점 · 약점</div>
+    <div class="traitgrid">
+      <div class="traitcol strength">
+        <h3>강점</h3>
+        ${type.strengths.map(s => `<div class="traititem"><div class="tt">${s.t}</div><div class="dd">${s.d}</div></div>`).join('')}
+      </div>
+      <div class="traitcol weakness">
+        <h3>약점</h3>
+        ${type.weaknesses.map(w => `<div class="traititem"><div class="tt">${w.t}</div><div class="dd">${w.d}</div></div>`).join('')}
+      </div>
+    </div>
+
+    <div class="sectiontitle">어울리는 독서 환경</div>
+    <div class="envbox"><b>${type.env}</b></div>
+
+    <div class="sectiontitle">닮은 캐릭터</div>
+    <div class="charbox">
+      <div class="badge">${type.character.name[0]}</div>
+      <div class="info"><b>${type.character.name}</b><p>『${type.character.book}』 속 인물과 독서 성향이 닮았어요</p></div>
+    </div>
+
+    <div class="sectiontitle">유형 궁합</div>
+    <div class="matchgrid">
+      <div class="matchcard good">
+        <div class="mlabel">편하게 취향 통하는 유형</div>
+        <div class="mname">${TYPES[type.match.good].name}</div>
+        <div class="mcode">${type.match.good}</div>
+      </div>
+      <div class="matchcard bad">
+        <div class="mlabel">정반대라 신선한 유형</div>
+        <div class="mname">${TYPES[type.match.bad].name}</div>
+        <div class="mcode">${type.match.bad}</div>
+      </div>
+    </div>
+
     <div class="sectiontitle">추천 도서 3권</div>
     <div class="books">
       ${type.books.map((b,i) => {
         const local = LOCAL_COVERS[code] && LOCAL_COVERS[code][i];
+        const buyLink = LOCAL_LINKS[code] && LOCAL_LINKS[code][i];
         return `
         <div class="book">
           <div class="cover" id="cover-${i}" style="background:${type.color};">
@@ -413,6 +577,7 @@ function showResult(code, sums, shared){
           <p class="cat">${b.cat}</p>
           <p class="title">${b.title}</p>
           <p class="author">${b.author}</p>
+          ${buyLink ? `<a class="buylink" href="${buyLink}" target="_blank" rel="noopener sponsored">구매하기 ↗</a>` : ''}
         </div>`;
       }).join('')}
     </div>
@@ -580,7 +745,7 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight){
 
 /* ---------- 시작 ---------- */
 (async function boot(){
-  await loadCoversManifest();
+  await Promise.all([loadCoversManifest(), loadLinksManifest()]);
   const sharedCode = new URLSearchParams(location.search).get('type');
   if(sharedCode && TYPES[sharedCode]){
     // 공유 링크로 들어온 경우: 내 답변이 없으니 게이지 없이 결과만 보여줌

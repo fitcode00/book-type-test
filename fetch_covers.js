@@ -1,6 +1,8 @@
 /*
   48권 표지 이미지를 한 번만 미리 받아서 covers/ 폴더에 저장하고,
   covers.json에 코드별 경로를 기록하는 스크립트.
+  + 알라딘 TTB(Thanks To Blogger) 제휴 구매링크도 함께 만들어 links.json에 저장.
+    (구매 연결 → 24시간 내 구매시 판매가 약 3% 리베이트, 알라딘 공식 제휴 프로그램)
 
   왜 필요한가:
   알라딘 API는 Render 같은 해외/클라우드 서버 IP에서 호출하면 CloudFront가
@@ -11,8 +13,8 @@
 
   실행 방법:
     node fetch_covers.js
-  끝나면 covers/ 폴더와 covers.json이 생성됨.
-  그 다음 GitHub에 covers 폴더와 covers.json도 같이 올려야 함.
+  끝나면 covers/ 폴더, covers.json, links.json이 생성/갱신됨.
+  그 다음 GitHub에 covers 폴더, covers.json, links.json을 같이 올려야 함.
 */
 
 const https = require('https');
@@ -51,6 +53,7 @@ function get(url){
   });
 }
 
+// 표지 URL과 함께 상품 itemId도 반환 (itemId가 있어야 TTB 제휴 구매링크를 만들 수 있음)
 async function aladinCover(title, author){
   for (const queryType of ['Keyword', 'Title']) {
     const q = queryType === 'Keyword' ? `${title} ${author}` : title;
@@ -63,11 +66,20 @@ async function aladinCover(title, author){
       const res = await get(url);
       if(res.status !== 200) continue;
       const data = JSON.parse(res.body.toString('utf-8'));
-      const cover = data.item && data.item[0] && data.item[0].cover;
-      if(cover) return cover;
+      const item = data.item && data.item[0];
+      if(item && item.cover) return { cover: item.cover, itemId: item.itemId || null };
     }catch(e){ /* 다음 시도로 넘어감 */ }
   }
   return null;
+}
+
+// 알라딘 TTB(Thanks To Blogger) 제휴 구매링크 생성
+// itemId가 있으면 해당 상품 페이지로 바로 연결, 없으면 검색결과 페이지로 연결 (둘 다 ttbkey로 추적됨)
+function buildTTBLink(itemId, title){
+  if (itemId) {
+    return `https://www.aladin.co.kr/shop/wproduct.aspx?ItemId=${itemId}&TTBKey=${ALADIN_TTB_KEY}`;
+  }
+  return `https://www.aladin.co.kr/search/wsearchresult.aspx?SearchTarget=Book&SearchWord=${encodeURIComponent(title)}&TTBKey=${ALADIN_TTB_KEY}`;
 }
 
 async function googleCover(title, author){
@@ -86,17 +98,31 @@ function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 async function main(){
   if(!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR);
   const manifest = {};
-  let ok = 0, fail = 0;
+  const links = {};
+  let ok = 0, fail = 0, linked = 0;
 
   for (const code of Object.keys(BOOKS)) {
     manifest[code] = [];
+    links[code] = [];
     const books = BOOKS[code];
     for (let i = 0; i < books.length; i++) {
       const [title, author] = books[i];
       process.stdout.write(`[${code}-${i}] ${title} ... `);
-      let coverUrl = await aladinCover(title, author);
+      let result = await aladinCover(title, author); // { cover, itemId } | null
       let source = 'aladin';
-      if (!coverUrl) { coverUrl = await googleCover(title, author); source = 'google'; }
+      let coverUrl = result && result.cover;
+      let itemId = result && result.itemId;
+
+      if (!coverUrl) {
+        coverUrl = await googleCover(title, author);
+        source = 'google';
+        itemId = null; // 구글 소스는 알라딘 itemId가 없음
+      }
+
+      // TTB 제휴 구매링크는 표지 성공 여부와 무관하게 항상 생성 (검색 fallback 포함)
+      const ttbLink = buildTTBLink(itemId, title);
+      links[code].push(ttbLink);
+      if (itemId) linked++;
 
       if (!coverUrl) {
         console.log('실패 (표지 못 찾음)');
@@ -124,8 +150,9 @@ async function main(){
   }
 
   fs.writeFileSync(path.join(__dirname, 'covers.json'), JSON.stringify(manifest, null, 2), 'utf-8');
-  console.log(`\n완료: 성공 ${ok}권, 실패 ${fail}권`);
-  console.log('covers/ 폴더와 covers.json이 생성됨. GitHub에 같이 올려줘.');
+  fs.writeFileSync(path.join(__dirname, 'links.json'), JSON.stringify(links, null, 2), 'utf-8');
+  console.log(`\n완료: 표지 성공 ${ok}권, 실패 ${fail}권 / 상품 직결링크(itemId 있음) ${linked}권`);
+  console.log('covers/ 폴더, covers.json, links.json이 생성됨. GitHub에 같이 올려줘.');
 }
 
 main();
