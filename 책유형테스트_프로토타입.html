@@ -14,6 +14,25 @@
 <meta name="twitter:title" content="책 유형 테스트 | 나는 어떤 책 유형일까?">
 <meta name="twitter:description" content="40개의 질문으로 나의 책 유형을 진단하고 딱 맞는 책 3권을 추천받아보세요.">
 <meta name="twitter:image" content="https://book-type-test.onrender.com/characters/FPWR.png">
+<script>
+  // Google Analytics(GA4) — analytics.google.com에서 무료로 속성 만들고
+  // 아래 'G-XXXXXXXXXX'를 본인의 측정 ID로 바꾸면 바로 작동함. 안 바꾸면 그냥 조용히 꺼져있음(에러 없음).
+  var GA_MEASUREMENT_ID = 'G-5M1FPV338M';
+  if (GA_MEASUREMENT_ID && GA_MEASUREMENT_ID.indexOf('XXXX') === -1) {
+    var gaScript = document.createElement('script');
+    gaScript.async = true;
+    gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_MEASUREMENT_ID;
+    document.head.appendChild(gaScript);
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function(){ dataLayer.push(arguments); };
+    gtag('js', new Date());
+    gtag('config', GA_MEASUREMENT_ID);
+  }
+  // GA4 미설정이어도 에러 안 나는 안전한 이벤트 트래킹 헬퍼 (다른 스크립트에서 trackEvent(...)로 호출)
+  function trackEvent(name, params){
+    try { if (window.gtag) gtag('event', name, params || {}); } catch(e){}
+  }
+</script>
 <style>
   :root{
     --bg:#faf8f3; --card:#ffffff; --ink:#2b2a26; --sub:#77746b; --line:#e7e2d6; --accent:#c96b4e;
@@ -502,7 +521,7 @@ function renderIntro(){
       <p>40개의 질문으로 나의 몰입 방식, 서사 취향, 정서 지향, 리딩 리듬을 진단하고<br>딱 맞는 책 3권을 추천받아보세요.</p>
       <div class="btnrow"><button class="btn" id="startBtn">테스트 시작하기</button></div>
     </div>`;
-  document.getElementById('startBtn').onclick = () => { current = 0; renderQuestion(); };
+  document.getElementById('startBtn').onclick = () => { trackEvent('start_quiz'); current = 0; renderQuestion(); };
 }
 
 function renderQuestion(){
@@ -551,6 +570,7 @@ function renderResult(){
 // 대신 "나도 테스트하기" CTA를 크게 보여줌.
 function showResult(code, sums, shared){
   const type = TYPES[code];
+  trackEvent(shared ? 'view_shared_result' : 'view_result', {type: code});
   app.innerHTML = `
     <div class="brand">TEXT TYPE 결과</div>
     <div class="resulthead">
@@ -632,7 +652,7 @@ function showResult(code, sums, shared){
           <p class="cat">${b.cat}</p>
           <p class="title">${b.title}</p>
           <p class="author">${b.author}</p>
-          ${buyLink ? `<a class="buylink" href="${buyLink}" target="_blank" rel="noopener sponsored">구매하기 ↗</a>` : ''}
+          ${buyLink ? `<a class="buylink" href="${buyLink}" target="_blank" rel="noopener sponsored" onclick="trackEvent('click_buy_link', {type:'${code}', book:'${b.title.replace(/'/g,'')}', cat:'${b.cat}'})">구매하기 ↗</a>` : ''}
         </div>`;
       }).join('')}
     </div>
@@ -650,6 +670,7 @@ function showResult(code, sums, shared){
 
     <div class="btnrow" style="margin-top:24px;">
       ${shared ? `<button class="btn" id="startBtn2">나도 테스트하기</button>` : `
+        ${typeof navigator !== 'undefined' && navigator.share ? `<button class="btn ghost" id="shareBtn">공유하기</button>` : ''}
         <button class="btn ghost" id="saveImgBtn">이미지로 저장</button>
         <button class="btn ghost" id="copyLinkBtn">링크 복사</button>
         <button class="btn" id="restartBtn">다시 하기</button>
@@ -658,6 +679,7 @@ function showResult(code, sums, shared){
 
   if(shared){
     document.getElementById('startBtn2').onclick = () => {
+      trackEvent('start_quiz_from_share', {type: code});
       answers = new Array(QUESTIONS.length).fill(0);
       current = 0;
       history.replaceState(null, '', location.pathname); // 주소에서 ?type= 제거
@@ -665,18 +687,28 @@ function showResult(code, sums, shared){
     };
   } else {
     document.getElementById('restartBtn').onclick = () => {
+      trackEvent('restart_quiz');
       answers = new Array(QUESTIONS.length).fill(0);
       current = -1;
       renderIntro();
     };
+    if(document.getElementById('shareBtn')){
+      document.getElementById('shareBtn').onclick = () => {
+        trackEvent('share_native', {type: code});
+        const url = location.href.split('?')[0] + '?type=' + code;
+        navigator.share({ title: `나는 [${type.name}] 책 유형!`, text: `나의 책 유형은 [${type.name}]! 너도 테스트해봐 →`, url })
+          .catch(() => {}); // 사용자가 공유 취소해도 에러 무시
+      };
+    }
     document.getElementById('copyLinkBtn').onclick = () => {
+      trackEvent('share_copy_link', {type: code});
       const url = location.href.split('?')[0] + '?type=' + code;
       navigator.clipboard?.writeText(url).then(()=>{
         document.getElementById('copyLinkBtn').textContent = '복사됨';
         setTimeout(()=>{ document.getElementById('copyLinkBtn').textContent = '링크 복사'; }, 1500);
       });
     };
-    document.getElementById('saveImgBtn').onclick = () => saveShareImage(type, code);
+    document.getElementById('saveImgBtn').onclick = () => { trackEvent('share_save_image', {type: code}); saveShareImage(type, code); };
   }
 
   // 로컬에 미리 받아둔 표지가 없는 책만 실시간 API로 시도

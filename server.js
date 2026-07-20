@@ -38,6 +38,8 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
+  '.xml': 'application/xml; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
 // 표지 검색 결과 캐시: "쿼리|쿼리타입" -> cover URL(문자열) 또는 null(결과없음)
