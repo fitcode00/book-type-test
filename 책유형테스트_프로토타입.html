@@ -62,6 +62,10 @@
   .hero{text-align:center;padding:40px 0 20px;}
   .hero h1{font-size:26px;font-weight:600;margin:0 0 14px;line-height:1.4;}
   .hero p{font-size:15px;color:var(--sub);line-height:1.7;margin:0 auto 28px;max-width:420px;}
+  .introwrap{min-height:calc(100vh - 64px);display:flex;flex-direction:column;justify-content:center;}
+  .featstrip{display:flex;justify-content:center;gap:22px;margin-top:32px;flex-wrap:wrap;}
+  .featstrip .feat{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:var(--sub);}
+  .featstrip .feat .ico{font-size:20px;}
   .btn{display:inline-block;padding:14px 28px;background:var(--ink);color:#fff;border:none;border-radius:999px;font-size:15px;font-weight:500;cursor:pointer;}
   .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);}
   .btn:active{transform:scale(.98);}
@@ -532,12 +536,19 @@ function computeResult(){
 /* ---------- 렌더 ---------- */
 function renderIntro(){
   app.innerHTML = `
-    <div class="brand">TEXT TYPE</div>
-    <div class="hero">
-      <div class="mascot-wrap"><img class="mascot-img mascot-lg" src="${CHARACTERS.FPWR}" alt="책 유형 테스트 캐릭터"></div>
-      <h1 class="serif">나는 어떤 책 유형일까?</h1>
-      <p>40개의 질문으로 나의 몰입 방식, 서사 취향, 정서 지향, 리딩 리듬을 진단하고<br>딱 맞는 책 3권을 추천받아보세요.</p>
-      <div class="btnrow"><button class="btn" id="startBtn">테스트 시작하기</button></div>
+    <div class="introwrap">
+      <div class="brand">TEXT TYPE</div>
+      <div class="hero">
+        <div class="mascot-wrap"><img class="mascot-img mascot-lg" src="${CHARACTERS.FPWR}" alt="책 유형 테스트 캐릭터"></div>
+        <h1 class="serif">나는 어떤 책 유형일까?</h1>
+        <p>40개의 질문으로 나의 몰입 방식, 서사 취향, 정서 지향, 리딩 리듬을 진단하고<br>딱 맞는 책 6권을 추천받아보세요.</p>
+        <div class="btnrow"><button class="btn" id="startBtn">테스트 시작하기</button></div>
+        <div class="featstrip">
+          <div class="feat"><span class="ico">⏱️</span>5분 소요</div>
+          <div class="feat"><span class="ico">🎭</span>16가지 유형</div>
+          <div class="feat"><span class="ico">📚</span>책 6권 추천</div>
+        </div>
+      </div>
     </div>`;
   document.getElementById('startBtn').onclick = () => { trackEvent('start_quiz'); current = 0; renderQuestion(); };
 }
