@@ -44,10 +44,11 @@
   .resulthead .code{font-size:12px;color:var(--sub);letter-spacing:.08em;}
   .resulthead h1{font-size:30px;margin:8px 0 12px;}
   .resulthead p{font-size:14px;color:var(--sub);max-width:420px;margin:0 auto;line-height:1.7;}
-  .gauges{display:flex;flex-direction:column;gap:16px;margin:28px 0;}
-  .gauge-label{display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-bottom:6px;}
-  .gauge-track{position:relative;height:6px;background:var(--line);border-radius:4px;}
-  .gauge-dot{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;background:var(--accent);transform:translate(-50%,-50%);}
+  .gauges{display:flex;flex-direction:column;gap:26px;margin:28px 0;}
+  .gauge-pct{text-align:center;font-size:15px;font-weight:700;margin-bottom:10px;}
+  .gauge-track{position:relative;height:6px;border-radius:4px;margin-bottom:8px;}
+  .gauge-dot{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.25);transform:translate(-50%,-50%);}
+  .gauge-label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--sub);}
   .sectiontitle{font-size:13px;font-weight:600;color:var(--sub);margin:28px 0 12px;}
   .longdesc{font-size:14.5px;line-height:1.8;color:var(--ink);margin:0;}
   .traitgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
@@ -143,10 +144,10 @@ const QUESTIONS = [
 ];
 
 const AXES = [
-  {key:'FG', left:'F', right:'G', leftLabel:'감정이입', rightLabel:'관찰'},
-  {key:'PT', left:'P', right:'T', leftLabel:'스토리', rightLabel:'사유'},
-  {key:'WS', left:'W', right:'S', leftLabel:'위로', rightLabel:'직면'},
-  {key:'RD', left:'R', right:'D', leftLabel:'몰아읽기', rightLabel:'음미'}
+  {key:'FG', left:'F', right:'G', leftLabel:'감정이입', rightLabel:'관찰', color:'#4a90d9'},
+  {key:'PT', left:'P', right:'T', leftLabel:'스토리', rightLabel:'사유', color:'#e0a94e'},
+  {key:'WS', left:'W', right:'S', leftLabel:'위로', rightLabel:'직면', color:'#4a9d6f'},
+  {key:'RD', left:'R', right:'D', leftLabel:'몰아읽기', rightLabel:'음미', color:'#9068c7'}
 ];
 
 const TYPES = {
@@ -564,10 +565,16 @@ function showResult(code, sums, shared){
       <div class="gauges">
         ${AXES.map(ax => {
           const l = sums[ax.left], r = sums[ax.right];
-          const pct = Math.round(l/(l+r)*100);
+          const pct = Math.round(l/(l+r)*100); // 0~100, 높을수록 left(F/P/W/R) 우세
+          const dominant = pct >= 50 ? `${ax.leftLabel} ${ax.left}` : `${ax.rightLabel} ${ax.right}`;
+          const dominantPct = pct >= 50 ? pct : 100 - pct;
+          const dotPos = 100 - pct; // 점 위치: left 우세일수록 왼쪽(0%)에 가깝게, right 우세일수록 오른쪽(100%)에 가깝게
           return `<div>
+            <div class="gauge-pct" style="color:${ax.color};">${dominantPct}% ${dominant}</div>
+            <div class="gauge-track" style="background:${ax.color};">
+              <div class="gauge-dot" style="left:${dotPos}%;border-color:${ax.color};"></div>
+            </div>
             <div class="gauge-label"><span>${ax.leftLabel} ${ax.left}</span><span>${ax.rightLabel} ${ax.right}</span></div>
-            <div class="gauge-track"><div class="gauge-dot" style="left:${pct}%"></div></div>
           </div>`;
         }).join('')}
       </div>
