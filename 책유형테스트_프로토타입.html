@@ -569,7 +569,8 @@ function renderQuestion(){
     <div class="navrow">
       <button class="btn ghost" id="prevBtn" ${current===0?'disabled style="visibility:hidden"':''}>이전</button>
       <button class="btn" id="nextBtn" ${answers[current]===0?'disabled style="opacity:.4"':''}>${current===QUESTIONS.length-1?'결과보기':'다음'}</button>
-    </div>`;
+    </div>
+    <div class="adslot" id="adfitSlot"></div>`;
 
   document.querySelectorAll('#scaleRow button').forEach(btn=>{
     btn.onclick = () => {
@@ -579,6 +580,7 @@ function renderQuestion(){
   });
   document.getElementById('prevBtn').onclick = () => { if(current>0){ current--; renderQuestion(); } };
   document.getElementById('nextBtn').onclick = () => goNext(false);
+  renderAdfit('adfitSlot');
 }
 
 function goNext(fromScale){
