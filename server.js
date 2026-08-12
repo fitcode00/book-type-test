@@ -553,6 +553,8 @@ async function handleRequest(req, res){
       createdAt: user.createdAt || null,
       pushSubscribed: !!user.pushSubscription,
       freeMode: FREE_FOR_ALL,
+      recommendedBooks: user.recommendedBooks || [],
+      chatCount: Math.floor((user.chatHistory || []).length / 2),
     });
     return;
   }
@@ -627,14 +629,37 @@ async function handleRequest(req, res){
     ].filter(Boolean).join('\n');
 
     const history = Array.isArray(body.history) ? body.history : [];
-    const messages = history.concat([{ role: 'user', content: String(body.message).slice(0, 2000) }]);
+    const userMessage = String(body.message).slice(0, 2000);
+    const messages = history.concat([{ role: 'user', content: userMessage }]);
 
     try {
       const reply = await callClaude(systemPrompt, messages);
+      // 대화기록 저장(최근 60개=30턴만 유지) + 언급된 책 목록 누적(마이페이지 "내 책장"용)
+      if (!Array.isArray(user.chatHistory)) user.chatHistory = [];
+      user.chatHistory.push({ role: 'user', content: userMessage });
+      user.chatHistory.push({ role: 'assistant', content: reply });
+      if (user.chatHistory.length > 60) user.chatHistory = user.chatHistory.slice(-60);
+      if (!Array.isArray(user.recommendedBooks)) user.recommendedBooks = [];
+      for (const m of reply.matchAll(/\[\[책:\s*([^\]|]+?)\s*(?:\|\s*([^\]]+))?\]\]/g)) {
+        const title = m[1].trim();
+        if (!user.recommendedBooks.some((b) => b.title === title)) {
+          user.recommendedBooks.push({ title, author: (m[2] || '').trim(), addedAt: new Date().toISOString() });
+        }
+      }
+      if (user.recommendedBooks.length > 50) user.recommendedBooks = user.recommendedBooks.slice(-50);
+      await setUser(user.email, user);
       sendJson(res, 200, { reply });
     } catch (e) {
       sendJson(res, 500, { error: String((e && e.message) || e) });
     }
+    return;
+  }
+
+  // ---- AI 상담 대화기록 조회 (마이페이지 미리보기 + 채팅 이어하기용) ----
+  if (url.pathname === '/api/chat-history' && req.method === 'GET') {
+    const user = await getSessionUser(req);
+    if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
+    sendJson(res, 200, { history: user.chatHistory || [] });
     return;
   }
 

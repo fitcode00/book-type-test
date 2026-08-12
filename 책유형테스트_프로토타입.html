@@ -560,26 +560,37 @@ function urlBase64ToUint8Array(base64String){
 
 async function subscribePush(){
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) { alert('이 브라우저는 푸시 알림을 지원하지 않아요.'); return false; }
-  const keyRes = await fetch('/api/vapid-public-key');
-  const keyData = await keyRes.json();
-  if (!keyData.key) { alert('아직 푸시 알림이 준비되지 않았어요.'); return false; }
-  const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return false;
-  const reg = await navigator.serviceWorker.register('/sw.js');
-  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(keyData.key) });
-  await fetch('/api/push-subscribe', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ subscription: sub.toJSON() }),
-  });
-  currentUser.pushSubscribed = true;
-  return true;
+  if (Notification.permission === 'denied') {
+    alert('알림이 브라우저에서 차단돼있어요. 주소창 왼쪽 자물쇠 아이콘 → 알림 설정을 "허용"으로 바꾼 뒤 다시 시도해주세요.');
+    return false;
+  }
+  try {
+    const keyRes = await fetch('/api/vapid-public-key');
+    const keyData = await keyRes.json();
+    if (!keyData.key) { alert('아직 푸시 알림이 준비되지 않았어요.'); return false; }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return false;
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(keyData.key) });
+    await fetch('/api/push-subscribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: sub.toJSON() }),
+    });
+    currentUser.pushSubscribed = true;
+    return true;
+  } catch (e) {
+    alert('알림 설정 중 문제가 생겼어요. 잠시 후 다시 시도해주세요.');
+    return false;
+  }
 }
 
 async function unsubscribePush(){
   try {
-    const reg = await navigator.serviceWorker.getRegistration('/sw.js');
-    const sub = reg && await reg.pushManager.getSubscription();
-    if (sub) await sub.unsubscribe();
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+      const sub = reg && await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+    }
   } catch (e) { /* 무시 */ }
   await fetch('/api/push-unsubscribe', { method: 'POST' }).catch(() => {});
   currentUser.pushSubscribed = false;
@@ -752,7 +763,7 @@ function showResult(code, sums, shared){
   const type = TYPES[code];
   trackEvent(shared ? 'view_shared_result' : 'view_result', {type: code});
   app.innerHTML = `
-    <div class="brand">TEXT TYPE 결과${(!shared && currentUser) ? ` · <a href="#" id="myPageLink" style="color:var(--accent);">마이페이지</a>` : ''}</div>
+    <div class="brand">TEXT TYPE 결과${(!shared && currentUser) ? ` · ${navLine('result', code)}` : ''}</div>
     <div class="resulthead">
       <div class="mascot-wrap"><img class="mascot-img mascot-lg" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터" style="background:${type.color};"></div>
       <div class="code">${code} 유형</div>
@@ -841,7 +852,7 @@ function showResult(code, sums, shared){
     <div class="aiconsult">
       <div class="aiconsult-t">💬 더 얘기해보고 싶다면?</div>
       <p>내 유형을 아는 AI와 자유롭게 책 얘기하고, 고민에 맞는 책도 처방받아보세요.</p>
-      <button class="btn" id="aiChatBtn">AI와 상담하기(가칭)</button>
+      <button class="btn" id="aiChatBtn">AI와 상담하기</button>
     </div>`}
 
     <div class="sectiontitle">공유 카드</div>
@@ -868,6 +879,7 @@ function showResult(code, sums, shared){
     <div class="adslot" id="adfitSlot"></div>`;
 
   renderAdfit('adfitSlot');
+  wireNavLine(code);
 
   if (!shared) {
     document.getElementById('aiChatBtn').onclick = () => {
@@ -881,8 +893,6 @@ function showResult(code, sums, shared){
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code }),
       }).catch(() => {});
-      const myPageLink = document.getElementById('myPageLink');
-      if (myPageLink) myPageLink.onclick = (e) => { e.preventDefault(); renderMyPage(); };
     }
   }
 
@@ -971,12 +981,13 @@ let subPollTimer = null;
 async function renderSubscribe(code){
   if (subPollTimer) { clearInterval(subPollTimer); subPollTimer = null; }
   app.innerHTML = `
-    <div class="brand">TEXT TYPE · AI 상담(가칭)</div>
+    <div class="brand">TEXT TYPE · AI 상담</div>
     <div class="authbox">
       <h2 class="serif">AI 상담 구독</h2>
       <p class="authhint" id="subInfo">불러오는 중...</p>
       <div id="subBankBox" style="display:none;margin-top:14px;padding:14px;border-radius:10px;background:#f6f5f2;font-size:14px;line-height:1.7;"></div>
       <div class="btnrow" id="subActions" style="margin-top:14px;"></div>
+      <p style="font-size:11.5px;color:var(--sub);margin-top:16px;">결제 관련 문의는 fitcode00@gmail.com으로 연락주세요.</p>
       <button class="btn ghost" id="subBackBtn" style="margin-top:18px;">뒤로가기</button>
     </div>`;
 
@@ -1062,19 +1073,35 @@ async function renderSubscribe(code){
   }
 }
 
-function renderChat(code){
+// 메시지 말풍선에 책 구매링크들을 붙임 (실시간 응답, 이전 대화 복원 양쪽에서 재사용)
+function attachBookLinks(msgEl, books, code, logEl){
+  if (!books.length) return;
+  const linksBox = document.createElement('div');
+  linksBox.className = 'booklinks';
+  msgEl.querySelector('.msgwrap').appendChild(linksBox);
+  books.forEach(async ({ title }) => {
+    const link = await resolveBookLink(title, code);
+    if (!link) return;
+    const a = document.createElement('a');
+    a.className = 'booklink';
+    a.href = link; a.target = '_blank'; a.rel = 'noopener sponsored';
+    a.textContent = `📖 ${title} 구매하기 ↗`;
+    a.onclick = () => trackEvent('click_ai_book_link', { type: code, book: title });
+    linksBox.appendChild(a);
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  });
+}
+
+async function renderChat(code){
   const type = TYPES[code];
-  chatHistory = [];
   app.innerHTML = `
-    <div class="brand">TEXT TYPE · AI 상담(가칭)${currentUser ? ` · <a href="#" id="chatMyPageLink" style="color:var(--accent);">마이페이지</a>` : ''}</div>
+    <div class="brand">TEXT TYPE · AI 상담${currentUser ? ` · ${navLine('chat', code)}` : ''}</div>
     <div class="chatwrap">
       <div class="chathead">
         <div class="mascot-wrap"><img class="mascot-img mascot-sm" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터"></div>
         <div><b>${type.name}</b><span>과(와) 어울리는 AI 북 컨시어지</span></div>
       </div>
-      <div class="chatlog" id="chatLog">
-        <div class="chatmsg ai"><div class="bubble">안녕하세요! ${type.name}이시군요.\n\n뭐부터 해볼까요?\n1. 자유롭게 책 얘기\n2. 요즘 고민 상담받고 책 처방받기\n3. 내 유형이랑 어울리는 책 더 추천받기\n\n번호로 골라도 되고, 그냥 편하게 말 걸어주셔도 돼요.</div></div>
-      </div>
+      <div class="chatlog" id="chatLog"></div>
       <div class="chatinputrow">
         <input type="text" id="chatInput" placeholder="메시지를 입력하세요">
         <button class="btn" id="chatSendBtn">보내기</button>
@@ -1083,8 +1110,7 @@ function renderChat(code){
     </div>`;
 
   document.getElementById('chatBackBtn').onclick = () => { showResult(code, null, false); };
-  const chatMyPageLink = document.getElementById('chatMyPageLink');
-  if (chatMyPageLink) chatMyPageLink.onclick = (e) => { e.preventDefault(); renderMyPage(); };
+  wireNavLine(code);
 
   const logEl = document.getElementById('chatLog');
   const inputEl = document.getElementById('chatInput');
@@ -1098,6 +1124,25 @@ function renderChat(code){
     logEl.appendChild(div);
     logEl.scrollTop = logEl.scrollHeight;
     return div;
+  }
+
+  // 이전 대화가 있으면 이어서 보여주고, 없으면 인사말부터 시작
+  chatHistory = [];
+  try {
+    const histRes = await fetch('/api/chat-history');
+    const histData = await histRes.json();
+    chatHistory = histData.history || [];
+  } catch (e) { /* 불러오기 실패해도 새 대화로 진행 */ }
+
+  if (!chatHistory.length) {
+    appendMsg('ai', `안녕하세요! ${type.name}이시군요.\n\n뭐부터 해볼까요?\n1. 자유롭게 책 얘기\n2. 요즘 고민 상담받고 책 처방받기\n3. 내 유형이랑 어울리는 책 더 추천받기\n\n번호로 골라도 되고, 그냥 편하게 말 걸어주셔도 돼요.`);
+  } else {
+    chatHistory.forEach((m) => {
+      if (m.role === 'user') { appendMsg('user', m.content); return; }
+      const { plain, books } = parseBookMarkers(m.content);
+      const el = appendMsg('ai', plain);
+      attachBookLinks(el, books, code, logEl);
+    });
   }
 
   async function send(){
@@ -1132,23 +1177,7 @@ function renderChat(code){
         chatHistory.push({ role: 'user', content: text });
         chatHistory.push({ role: 'assistant', content: data.reply });
         trackEvent('ai_chat_message', { type: code });
-
-        if (mentionedBooks.length) {
-          const linksBox = document.createElement('div');
-          linksBox.className = 'booklinks';
-          typingEl.querySelector('.msgwrap').appendChild(linksBox);
-          mentionedBooks.forEach(async ({ title }) => {
-            const link = await resolveBookLink(title, code);
-            if (!link) return;
-            const a = document.createElement('a');
-            a.className = 'booklink';
-            a.href = link; a.target = '_blank'; a.rel = 'noopener sponsored';
-            a.textContent = `📖 ${title} 구매하기 ↗`;
-            a.onclick = () => trackEvent('click_ai_book_link', { type: code, book: title });
-            linksBox.appendChild(a);
-            logEl.scrollTop = logEl.scrollHeight;
-          });
-        }
+        attachBookLinks(typingEl, mentionedBooks, code, logEl);
       }
     } catch (e) {
       typingEl.querySelector('.bubble').textContent = '네트워크 오류가 발생했어요.';
@@ -1179,7 +1208,7 @@ function renderHome(){
   }
 
   app.innerHTML = `
-    <div class="brand">TEXT TYPE · <a href="#" id="homeMyPageLink" style="color:var(--accent);">마이페이지</a></div>
+    <div class="brand">TEXT TYPE · ${navLine('home', code)}</div>
 
     <div class="card homecard">
       <div class="mascot-wrap"><img class="mascot-img mascot-lg" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터" style="background:${type.color};"></div>
@@ -1217,62 +1246,98 @@ function renderHome(){
     </div>` : `<p style="text-align:center;color:var(--sub);font-size:13px;">아직 남긴 독후감이 없어요.</p>`}
     <div class="btnrow" style="margin-top:14px;"><button class="btn" id="homeReviewBtn">독후감 쓰기</button></div>`;
 
-  document.getElementById('homeMyPageLink').onclick = (e) => { e.preventDefault(); renderMyPage(); };
+  wireNavLine(code);
   document.getElementById('homeResultBtn').onclick = () => showResult(currentUser.resultType, null, false);
   document.getElementById('homeBooksBtn').onclick = () => showResult(currentUser.resultType, null, false);
   document.getElementById('homeReviewBtn').onclick = () => renderMyPage();
 }
 
-/* ---------- 마이페이지 ---------- */
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function renderMyPage(){
+/* ---------- 공통 네비게이션 (결과/홈/마이페이지/AI상담 사이 이동) ---------- */
+function navLine(activeKey, code){
+  if (!currentUser) return '';
+  const items = [];
+  if (currentUser.resultType) items.push({ key: 'home', label: '홈' });
+  if (code) items.push({ key: 'result', label: '결과' });
+  items.push({ key: 'mypage', label: '마이페이지' });
+  if (code || currentUser.resultType) items.push({ key: 'chat', label: 'AI상담' });
+  return items.map((it) => it.key === activeKey
+    ? `<span style="font-weight:600;">${it.label}</span>`
+    : `<a href="#" data-nav="${it.key}" style="color:var(--accent);">${it.label}</a>`
+  ).join(' · ');
+}
+function wireNavLine(code){
+  document.querySelectorAll('[data-nav]').forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      const k = a.dataset.nav;
+      const c = code || currentUser.resultType;
+      if (k === 'home') renderHome();
+      else if (k === 'result') showResult(c, null, false);
+      else if (k === 'mypage') renderMyPage();
+      else if (k === 'chat') openAiChat(c);
+    };
+  });
+}
+
+/* ---------- 마이페이지 ---------- */
+
+function bookCoverHtml(title, color, localSrc, elId){
+  return `<div class="cover" ${elId ? `id="${elId}"` : ''} style="background:${color};">
+    <span style="${localSrc ? 'display:none;' : ''}">${escapeHtml(title[0])}</span>
+    <img alt="${escapeHtml(title)} 표지" ${localSrc ? `src="${localSrc}" style="display:block;"` : ''}>
+  </div>`;
+}
+
+async function renderMyPage(){
   const type = currentUser.resultType ? TYPES[currentUser.resultType] : null;
   const reviews = currentUser.reviews || [];
+  const recommendedBooks = currentUser.recommendedBooks || [];
+  const chatCount = currentUser.chatCount || 0;
+  const daysSince = currentUser.createdAt ? Math.max(1, Math.floor((Date.now() - new Date(currentUser.createdAt)) / 86400000) + 1) : '-';
+
+  // 내 책장 = 유형 기본 추천 6권 + AI가 대화 중 새로 추천해준 책(중복 제목 제외)
+  const baseTitles = type ? type.books.map((b) => b.title) : [];
+  const extraBooks = recommendedBooks.filter((b) => !baseTitles.includes(b.title));
 
   app.innerHTML = `
-    <div class="brand">마이페이지</div>
-    <div class="resulthead">
-      ${type ? `<div class="mascot-wrap"><img class="mascot-img mascot-lg" src="${CHARACTERS[currentUser.resultType]}" alt="${type.name} 캐릭터" style="background:${type.color};"></div>` : ''}
-      <p style="font-size:12px;color:var(--sub);">${escapeHtml(currentUser.email)}</p>
-      <h1 class="serif">${type ? type.name : '아직 테스트 전이에요'}</h1>
-    </div>
+    <div class="brand">마이페이지 · ${navLine('mypage', currentUser.resultType)}</div>
+    <p style="font-size:12px;color:var(--sub);margin:2px 0 4px;">${escapeHtml(currentUser.email)}${type ? ` · ${type.name}` : ''}</p>
 
-    <div class="sectiontitle">독서 기록</div>
-    <div class="statgrid">
+    <div class="sectiontitle" style="margin-top:18px;">독서활동</div>
+    <div class="statgrid" style="grid-template-columns:repeat(4,1fr);">
+      <div class="statbox"><div class="sv">${daysSince}</div><div class="sl">가입 후 일수</div></div>
       <div class="statbox"><div class="sv">${reviews.length}</div><div class="sl">남긴 독후감</div></div>
-      <div class="statbox"><div class="sv">${currentUser.createdAt ? Math.max(1, Math.floor((Date.now() - new Date(currentUser.createdAt)) / 86400000) + 1) : '-'}</div><div class="sl">가입 후 일수</div></div>
+      <div class="statbox"><div class="sv">${chatCount}</div><div class="sl">AI 대화 수</div></div>
+      <div class="statbox"><div class="sv">${baseTitles.length + extraBooks.length}</div><div class="sl">쌓인 책</div></div>
     </div>
 
-    <div class="sectiontitle">알림</div>
+    <div class="sectiontitle" style="margin-top:24px;">AI와의 대화</div>
+    <div class="card" id="chatPreviewCard"><p style="font-size:12.5px;color:var(--sub);margin:0;">불러오는 중...</p></div>
+
+    <div class="sectiontitle" style="margin-top:24px;">알림</div>
     <div class="card" style="text-align:center;">
       <p style="font-size:12.5px;color:var(--sub);margin:0 0 12px;">매달 새 책 큐레이션을 알림으로 받아보세요.</p>
       <button class="btn ghost" id="pushToggleBtn">불러오는 중...</button>
     </div>
 
-    ${type ? `
-    <div class="sectiontitle">추천받은 책</div>
+    <div class="sectiontitle" style="margin-top:24px;">내 책장</div>
+    ${(baseTitles.length + extraBooks.length) ? `
     <div class="books">
-      ${type.books.map((b, i) => {
+      ${type ? type.books.map((b, i) => {
         const local = LOCAL_COVERS[currentUser.resultType] && LOCAL_COVERS[currentUser.resultType][i];
-        return `
-        <div class="book">
-          <div class="cover" style="background:${type.color};">
-            <span style="${local ? 'display:none;' : ''}">${escapeHtml(b.title[0])}</span>
-            ${local ? `<img alt="${escapeHtml(b.title)} 표지" src="${local}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;">` : ''}
-          </div>
-          <p class="title">${escapeHtml(b.title)}</p>
-          <p class="author">${escapeHtml(b.author)}</p>
-        </div>`;
-      }).join('')}
+        return `<div class="book">${bookCoverHtml(b.title, type.color, local)}<p class="title">${escapeHtml(b.title)}</p><p class="author">${escapeHtml(b.author)}</p></div>`;
+      }).join('') : ''}
+      ${extraBooks.map((b, i) => `<div class="book">${bookCoverHtml(b.title, '#ccc4b6', '', `mycover-${i}`)}<p class="title">${escapeHtml(b.title)}</p><p class="author">${escapeHtml(b.author || 'AI 추천')}</p></div>`).join('')}
     </div>` : `<p style="text-align:center;color:var(--sub);font-size:13px;">테스트를 먼저 해보세요.</p>`}
 
-    <div class="sectiontitle">독후감</div>
+    <div class="sectiontitle" style="margin-top:24px;">독후감</div>
     ${type ? `
     <div class="reviewform">
-      <select id="reviewBook">${type.books.map(b => `<option value="${escapeHtml(b.title)}">${escapeHtml(b.title)}</option>`).join('')}</select>
+      <select id="reviewBook">${(type.books.concat(extraBooks)).map(b => `<option value="${escapeHtml(b.title)}">${escapeHtml(b.title)}</option>`).join('')}</select>
       <textarea id="reviewContent" placeholder="이 책 어땠나요?"></textarea>
       <button class="btn" id="reviewAddBtn">독후감 남기기</button>
     </div>` : ''}
@@ -1286,14 +1351,15 @@ function renderMyPage(){
     </div>
 
     <div class="btnrow" style="margin-top:28px;">
-      ${type ? `<button class="btn" id="myPageChatBtn">AI와 상담하기</button>` : ''}
-      ${type ? `<button class="btn ghost" id="backResultBtn">결과 다시 보기</button>` : ''}
       <button class="btn ghost" id="logoutBtn">로그아웃</button>
     </div>`;
 
+  wireNavLine(currentUser.resultType);
+
+  // 로컬 표지 없는 AI 추천 책은 실시간 API로 표지 시도
+  extraBooks.forEach((b, i) => loadCover(`mycover-${i}`, b.title, b.author));
+
   if (type) {
-    document.getElementById('myPageChatBtn').onclick = () => openAiChat(currentUser.resultType);
-    document.getElementById('backResultBtn').onclick = () => showResult(currentUser.resultType, null, false);
     document.getElementById('reviewAddBtn').onclick = async () => {
       const bookTitle = document.getElementById('reviewBook').value;
       const content = document.getElementById('reviewContent').value.trim();
@@ -1329,11 +1395,40 @@ function renderMyPage(){
   renderPushBtnLabel();
   pushBtn.onclick = async () => {
     pushBtn.disabled = true;
-    if (currentUser.pushSubscribed) { await unsubscribePush(); }
-    else { await subscribePush(); trackEvent('push_subscribe'); }
+    if (currentUser.pushSubscribed) {
+      await unsubscribePush();
+    } else {
+      const ok = await subscribePush();
+      if (ok) trackEvent('push_subscribe');
+    }
     pushBtn.disabled = false;
     renderPushBtnLabel();
   };
+
+  // AI 대화 미리보기 (최근 주고받은 메시지) - 별도 호출이라 통계 렌더링을 막지 않게 나중에 채움
+  const previewCard = document.getElementById('chatPreviewCard');
+  if (!type) {
+    previewCard.innerHTML = `<p style="font-size:12.5px;color:var(--sub);margin:0;">테스트를 먼저 해보세요.</p>`;
+  } else {
+    try {
+      const histRes = await fetch('/api/chat-history');
+      const histData = await histRes.json();
+      const history = histData.history || [];
+      if (!history.length) {
+        previewCard.innerHTML = `<p style="font-size:12.5px;color:var(--sub);margin:0 0 12px;">아직 AI와 나눈 대화가 없어요.</p><button class="btn ghost" id="chatStartBtn">AI와 상담 시작하기</button>`;
+      } else {
+        const last = history.slice(-2);
+        previewCard.innerHTML = `
+          <div style="font-size:12.5px;color:var(--sub);line-height:1.6;margin-bottom:12px;">
+            ${last.map((m) => `<div><b>${m.role === 'user' ? '나' : 'AI'}</b> · ${escapeHtml(parseBookMarkers(m.content).plain.slice(0, 80))}${m.content.length > 80 ? '…' : ''}</div>`).join('')}
+          </div>
+          <button class="btn ghost" id="chatStartBtn">이어서 대화하기</button>`;
+      }
+      document.getElementById('chatStartBtn').onclick = () => openAiChat(currentUser.resultType);
+    } catch (e) {
+      previewCard.innerHTML = `<p style="font-size:12.5px;color:var(--sub);margin:0;">불러오지 못했어요.</p>`;
+    }
+  }
 }
 
 /* ---------- 공유 이미지 저장 (canvas) ---------- */
