@@ -109,16 +109,168 @@ if (webpush && VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
 
-/* ---------- 회원/세션 (JSON 파일 기반, 별도 DB 없이 프로토타입용) ---------- */
+/* ---------- 회원 데이터 저장소 ----------
+   Render 무료 플랜은 파일시스템이 임시라 재배포/재시작마다 로컬 파일이 날아감.
+   FIREBASE_* 환경변수가 있으면 Firestore에 저장(영구 보존), 없으면 로컬 JSON 파일로 폴백(로컬 개발용). */
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
-function loadUsers(){
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || '';
+const FIREBASE_CLIENT_EMAIL = process.env.FIREBASE_CLIENT_EMAIL || '';
+// Render 환경변수 입력칸은 보통 한 줄이라 개행이 \n 문자로 들어옴 -> 실제 개행으로 되돌림
+const FIREBASE_PRIVATE_KEY = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+const USE_FIRESTORE = !!(FIREBASE_PROJECT_ID && FIREBASE_CLIENT_EMAIL && FIREBASE_PRIVATE_KEY);
+
+function base64url(buf){
+  return (Buffer.isBuffer(buf) ? buf : Buffer.from(buf)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// 구글 서비스계정으로 OAuth2 access token 발급 (JWT bearer flow). 메모리에 캐싱, 만료 임박 시 재발급.
+let googleTokenCache = { token: '', expiresAt: 0 };
+function getGoogleAccessToken(){
+  if (googleTokenCache.token && Date.now() < googleTokenCache.expiresAt - 60000) {
+    return Promise.resolve(googleTokenCache.token);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = base64url(JSON.stringify({
+    iss: FIREBASE_CLIENT_EMAIL,
+    scope: 'https://www.googleapis.com/auth/datastore',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+  }));
+  const signer = crypto.createSign('RSA-SHA256');
+  signer.update(`${header}.${claim}`);
+  signer.end();
+  const signature = base64url(signer.sign(FIREBASE_PRIVATE_KEY));
+  const jwt = `${header}.${claim}.${signature}`;
+  const payload = new URLSearchParams({
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion: jwt,
+  }).toString();
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'oauth2.googleapis.com',
+      path: '/token',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(payload) },
+    };
+    const apiReq = https.request(options, (apiRes) => {
+      const chunks = [];
+      apiRes.on('data', (c) => chunks.push(c));
+      apiRes.on('end', () => {
+        let data = null;
+        try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch (e) { /* noop */ }
+        if (!data || !data.access_token) { reject(new Error((data && data.error_description) || 'Google 인증 실패')); return; }
+        googleTokenCache = { token: data.access_token, expiresAt: Date.now() + (data.expires_in || 3600) * 1000 };
+        resolve(data.access_token);
+      });
+    });
+    apiReq.on('error', reject);
+    apiReq.write(payload);
+    apiReq.end();
+  });
+}
+
+// JS 값 <-> Firestore REST 문서 형식 변환
+function toFirestoreValue(v){
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'string') return { stringValue: v };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toFirestoreValue) } };
+  return { mapValue: { fields: toFirestoreFields(v) } };
+}
+function toFirestoreFields(obj){
+  const fields = {};
+  Object.keys(obj || {}).forEach((k) => { fields[k] = toFirestoreValue(obj[k]); });
+  return fields;
+}
+function fromFirestoreValue(v){
+  if (!v) return null;
+  if ('nullValue' in v) return null;
+  if ('stringValue' in v) return v.stringValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromFirestoreValue);
+  if ('mapValue' in v) return fromFirestoreFields(v.mapValue.fields || {});
+  return null;
+}
+function fromFirestoreFields(fields){
+  const obj = {};
+  Object.keys(fields || {}).forEach((k) => { obj[k] = fromFirestoreValue(fields[k]); });
+  return obj;
+}
+
+function firestoreRequest(method, pathAndQuery, body){
+  return getGoogleAccessToken().then((token) => new Promise((resolve, reject) => {
+    const payload = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: 'firestore.googleapis.com',
+      path: `/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${pathAndQuery}`,
+      method,
+      headers: { Authorization: `Bearer ${token}` },
+    };
+    if (payload) { options.headers['Content-Type'] = 'application/json'; options.headers['Content-Length'] = Buffer.byteLength(payload); }
+    const apiReq = https.request(options, (apiRes) => {
+      const chunks = [];
+      apiRes.on('data', (c) => chunks.push(c));
+      apiRes.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) { /* noop */ }
+        if (apiRes.statusCode === 404) { resolve(null); return; }
+        if (apiRes.statusCode >= 200 && apiRes.statusCode < 300) { resolve(data); return; }
+        reject(new Error((data && data.error && data.error.message) || `Firestore 오류 (${apiRes.statusCode})`));
+      });
+    });
+    apiReq.on('error', reject);
+    if (payload) apiReq.write(payload);
+    apiReq.end();
+  }));
+}
+
+function loadUsersFile(){
   try { return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch (e) { return {}; }
 }
-function saveUsers(users){
+function saveUsersFile(users){
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+// 회원 한 명 조회/저장/전체목록 - USE_FIRESTORE 여부에 따라 Firestore 또는 로컬 파일 사용
+async function getUser(email){
+  if (USE_FIRESTORE) {
+    const doc = await firestoreRequest('GET', `users/${encodeURIComponent(email)}`);
+    return doc ? fromFirestoreFields(doc.fields) : null;
+  }
+  return loadUsersFile()[email] || null;
+}
+async function setUser(email, userObj){
+  if (USE_FIRESTORE) {
+    await firestoreRequest('PATCH', `users/${encodeURIComponent(email)}`, { fields: toFirestoreFields(userObj) });
+    return;
+  }
+  const users = loadUsersFile();
+  users[email] = userObj;
+  saveUsersFile(users);
+}
+async function listAllUsersMap(){
+  if (!USE_FIRESTORE) return loadUsersFile();
+  const result = {};
+  let pageToken = '';
+  do {
+    const qs = 'pageSize=300' + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
+    const data = await firestoreRequest('GET', `users?${qs}`);
+    ((data && data.documents) || []).forEach((doc) => {
+      const email = decodeURIComponent(doc.name.split('/').pop());
+      result[email] = fromFirestoreFields(doc.fields);
+    });
+    pageToken = (data && data.nextPageToken) || '';
+  } while (pageToken);
+  return result;
 }
 
 // 계좌이체 결제 요청/입금문자 매칭 기록 (data/payments.json)
@@ -132,23 +284,45 @@ function savePayments(data){
 function makeMatchCode(){
   return crypto.randomBytes(2).toString('hex').toUpperCase(); // 예: A3F9
 }
-function activateSubscription(email, days){
-  const users = loadUsers();
-  if (!users[email]) return null;
-  users[email].subscription = {
+async function activateSubscription(email, days){
+  const user = await getUser(email);
+  if (!user) return null;
+  user.subscription = {
     active: true,
     plan: 'paid',
     expiresAt: new Date(Date.now() + days * 86400000).toISOString(),
   };
-  saveUsers(users);
-  return users[email].subscription;
+  await setUser(email, user);
+  return user.subscription;
 }
 
-const sessions = new Map(); // 세션토큰 -> email (서버 재시작하면 초기화됨. 프로토타입 단계라 OK)
+// 세션은 서버 메모리에 안 두고, 서명된 쿠키(email+만료시각을 HMAC으로 서명)로 대체함.
+// 이러면 재배포/재시작해도 로그인이 안 풀림 (검증이 서명 확인만으로 되니까 서버가 뭘 기억할 필요가 없음).
+const SESSION_SECRET = process.env.SESSION_SECRET || 'local-dev-secret-change-in-production';
+if (!process.env.SESSION_SECRET) console.log('[주의] SESSION_SECRET 환경변수가 없어서 로컬 기본값 사용 중. 배포 전 꼭 설정할 것 (안 그러면 서버 재시작마다 기존 로그인들이 전부 무효화됨).');
 
 function makeSalt(){ return crypto.randomBytes(16).toString('hex'); }
 function makeToken(){ return crypto.randomBytes(24).toString('hex'); }
 function hashPassword(password, salt){ return crypto.scryptSync(password, salt, 64).toString('hex'); }
+
+function makeSessionToken(email){
+  const payload = base64url(JSON.stringify({ email, exp: Date.now() + 30 * 86400000 }));
+  const sig = base64url(crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest());
+  return `${payload}.${sig}`;
+}
+function verifySessionToken(token){
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+  const expectedSig = base64url(crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest());
+  if (sig.length !== expectedSig.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    if (!data.email || !data.exp || Date.now() > data.exp) return null;
+    return data.email;
+  } catch (e) { return null; }
+}
 
 function parseCookies(req){
   const header = req.headers.cookie || '';
@@ -160,13 +334,11 @@ function parseCookies(req){
   return out;
 }
 
-function getSessionUser(req){
-  const token = parseCookies(req).session;
-  if (!token) return null;
-  const email = sessions.get(token);
+async function getSessionUser(req){
+  const email = verifySessionToken(parseCookies(req).session);
   if (!email) return null;
-  const users = loadUsers();
-  return users[email] ? Object.assign({ email }, users[email]) : null;
+  const user = await getUser(email);
+  return user ? Object.assign({ email }, user) : null;
 }
 
 function readJsonBody(req){
@@ -291,6 +463,15 @@ function buildSearchTTBLink(title){
 }
 
 const server = http.createServer(async (req, res) => {
+  try {
+    await handleRequest(req, res);
+  } catch (e) {
+    console.error('요청 처리 중 오류:', e);
+    if (!res.headersSent) sendJson(res, 500, { error: '서버 오류가 발생했어요. 잠시 후 다시 시도해주세요.' });
+  }
+});
+
+async function handleRequest(req, res){
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
   if (url.pathname === '/aladin-api') {
@@ -321,10 +502,9 @@ const server = http.createServer(async (req, res) => {
     if (!body || !body.email || !body.password) { sendJson(res, 400, { error: '이메일/비밀번호를 입력해주세요.' }); return; }
     const email = String(body.email).trim().toLowerCase();
     if (body.password.length < 6) { sendJson(res, 400, { error: '비밀번호는 6자 이상으로 해주세요.' }); return; }
-    const users = loadUsers();
-    if (users[email]) { sendJson(res, 409, { error: '이미 가입된 이메일이에요.' }); return; }
+    if (await getUser(email)) { sendJson(res, 409, { error: '이미 가입된 이메일이에요.' }); return; }
     const salt = makeSalt();
-    users[email] = {
+    await setUser(email, {
       passwordHash: hashPassword(body.password, salt),
       salt,
       createdAt: new Date().toISOString(),
@@ -333,10 +513,8 @@ const server = http.createServer(async (req, res) => {
       pushSubscription: null,
       // 결제 확인되면 /admin에서 true로 바뀜 (자동결제 붙기 전까지의 임시 방법)
       subscription: { active: false, plan: 'free', expiresAt: null },
-    };
-    saveUsers(users);
-    const token = makeToken();
-    sessions.set(token, email);
+    });
+    const token = makeSessionToken(email);
     sendJson(res, 200, { ok: true, email }, { 'Set-Cookie': `session=${token}; HttpOnly; Path=/; Max-Age=2592000` });
     return;
   }
@@ -346,29 +524,25 @@ const server = http.createServer(async (req, res) => {
     const body = await readJsonBody(req).catch(() => null);
     if (!body || !body.email || !body.password) { sendJson(res, 400, { error: '이메일/비밀번호를 입력해주세요.' }); return; }
     const email = String(body.email).trim().toLowerCase();
-    const users = loadUsers();
-    const user = users[email];
+    const user = await getUser(email);
     if (!user || hashPassword(body.password, user.salt) !== user.passwordHash) {
       sendJson(res, 401, { error: '이메일 또는 비밀번호가 맞지 않아요.' });
       return;
     }
-    const token = makeToken();
-    sessions.set(token, email);
+    const token = makeSessionToken(email);
     sendJson(res, 200, { ok: true, email }, { 'Set-Cookie': `session=${token}; HttpOnly; Path=/; Max-Age=2592000` });
     return;
   }
 
   // ---- 로그아웃 ----
   if (url.pathname === '/api/logout' && req.method === 'POST') {
-    const token = parseCookies(req).session;
-    if (token) sessions.delete(token);
     sendJson(res, 200, { ok: true }, { 'Set-Cookie': 'session=; HttpOnly; Path=/; Max-Age=0' });
     return;
   }
 
   // ---- 로그인 상태 확인 ----
   if (url.pathname === '/api/me' && req.method === 'GET') {
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user) { sendJson(res, 200, { loggedIn: false }); return; }
     sendJson(res, 200, {
       loggedIn: true,
@@ -385,58 +559,52 @@ const server = http.createServer(async (req, res) => {
 
   // ---- 퀴즈 결과 유형을 계정에 저장 ----
   if (url.pathname === '/api/save-result' && req.method === 'POST') {
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
     const body = await readJsonBody(req).catch(() => null);
     if (!body || !body.code) { sendJson(res, 400, { error: 'code가 필요해요.' }); return; }
-    const users = loadUsers();
-    if (users[user.email]) {
-      users[user.email].resultType = body.code;
-      saveUsers(users);
-    }
+    user.resultType = body.code;
+    await setUser(user.email, user);
     sendJson(res, 200, { ok: true });
     return;
   }
 
   // ---- 독후감 추가 ----
   if (url.pathname === '/api/reviews' && req.method === 'POST') {
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
     const body = await readJsonBody(req).catch(() => null);
     if (!body || !body.bookTitle || !body.content) { sendJson(res, 400, { error: '책 제목과 내용을 입력해주세요.' }); return; }
-    const users = loadUsers();
-    if (!users[user.email]) { sendJson(res, 404, { error: '계정을 찾을 수 없어요.' }); return; }
-    if (!Array.isArray(users[user.email].reviews)) users[user.email].reviews = [];
+    if (!Array.isArray(user.reviews)) user.reviews = [];
     const review = {
       id: makeToken().slice(0, 12),
       bookTitle: String(body.bookTitle).slice(0, 200),
       content: String(body.content).slice(0, 4000),
       createdAt: new Date().toISOString(),
     };
-    users[user.email].reviews.unshift(review);
-    saveUsers(users);
-    sendJson(res, 200, { ok: true, reviews: users[user.email].reviews });
+    user.reviews.unshift(review);
+    await setUser(user.email, user);
+    sendJson(res, 200, { ok: true, reviews: user.reviews });
     return;
   }
 
   // ---- 독후감 삭제 ----
   if (url.pathname === '/api/reviews' && req.method === 'DELETE') {
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
     const body = await readJsonBody(req).catch(() => null);
     if (!body || !body.id) { sendJson(res, 400, { error: 'id가 필요해요.' }); return; }
-    const users = loadUsers();
-    if (users[user.email] && Array.isArray(users[user.email].reviews)) {
-      users[user.email].reviews = users[user.email].reviews.filter((r) => r.id !== body.id);
-      saveUsers(users);
+    if (Array.isArray(user.reviews)) {
+      user.reviews = user.reviews.filter((r) => r.id !== body.id);
+      await setUser(user.email, user);
     }
-    sendJson(res, 200, { ok: true, reviews: (users[user.email] && users[user.email].reviews) || [] });
+    sendJson(res, 200, { ok: true, reviews: user.reviews || [] });
     return;
   }
 
   // ---- AI 상담 채팅 ----
   if (url.pathname === '/api/chat' && req.method === 'POST') {
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user) { sendJson(res, 401, { error: 'AI 상담은 회원만 이용할 수 있어요. 로그인해주세요.' }); return; }
     if (!FREE_FOR_ALL && (!user.subscription || !user.subscription.active)) { sendJson(res, 402, { error: '구독 후 이용할 수 있는 기능이에요.' }); return; }
     const body = await readJsonBody(req).catch(() => null);
@@ -499,7 +667,7 @@ const server = http.createServer(async (req, res) => {
 
   // ---- 결제 요청 시작 (로그인 필요). 페이앱 설정돼있으면 페이앱, 아니면 계좌이체 매칭코드 방식으로 폴백 ----
   if (url.pathname === '/api/request-payment' && req.method === 'POST') {
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
     const body = await readJsonBody(req).catch(() => ({}));
 
@@ -575,7 +743,7 @@ const server = http.createServer(async (req, res) => {
       const payments = loadPayments();
       const rec = payments.pending.find((p) => p.mulNo === mulNo);
       if (!rec || rec.status !== 'matched') {
-        activateSubscription(email, 30);
+        await activateSubscription(email, 30);
         if (rec) { rec.status = 'matched'; rec.matchedAt = new Date().toISOString(); }
         else payments.pending.push({ mulNo, email, amount: price, status: 'matched', matchedAt: new Date().toISOString(), provider: 'payapp' });
         savePayments(payments);
@@ -605,7 +773,7 @@ const server = http.createServer(async (req, res) => {
 
     if (idx > -1) {
       const p = payments.pending[idx];
-      const sub = activateSubscription(p.email, 30);
+      const sub = await activateSubscription(p.email, 30);
       p.status = 'matched';
       p.matchedAt = new Date().toISOString();
       savePayments(payments);
@@ -626,7 +794,7 @@ const server = http.createServer(async (req, res) => {
     if (!ADMIN_KEY || !body || body.adminKey !== ADMIN_KEY) { sendJson(res, 401, { error: '관리자 키가 맞지 않아요.' }); return; }
     const email = String(body.email || '').trim().toLowerCase();
     const days = Number(body.days) || 30;
-    const sub = activateSubscription(email, days);
+    const sub = await activateSubscription(email, days);
     if (!sub) { sendJson(res, 404, { error: '해당 이메일 계정을 찾을 수 없어요.' }); return; }
     sendJson(res, 200, { ok: true, subscription: sub });
     return;
@@ -729,28 +897,22 @@ const server = http.createServer(async (req, res) => {
 
   // ---- 푸시 알림 구독 등록 ----
   if (url.pathname === '/api/push-subscribe' && req.method === 'POST') {
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
     const body = await readJsonBody(req).catch(() => null);
     if (!body || !body.subscription) { sendJson(res, 400, { error: 'subscription이 필요해요.' }); return; }
-    const users = loadUsers();
-    if (users[user.email]) {
-      users[user.email].pushSubscription = body.subscription;
-      saveUsers(users);
-    }
+    user.pushSubscription = body.subscription;
+    await setUser(user.email, user);
     sendJson(res, 200, { ok: true });
     return;
   }
 
   // ---- 푸시 알림 구독 해제 ----
   if (url.pathname === '/api/push-unsubscribe' && req.method === 'POST') {
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
-    const users = loadUsers();
-    if (users[user.email]) {
-      users[user.email].pushSubscription = null;
-      saveUsers(users);
-    }
+    user.pushSubscription = null;
+    await setUser(user.email, user);
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -762,7 +924,7 @@ const server = http.createServer(async (req, res) => {
     if (!webpush || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) { sendJson(res, 503, { error: '푸시 기능이 아직 설정되지 않았어요 (web-push 미설치 또는 VAPID 키 없음).' }); return; }
     const title = body.title || '이번 달 책 큐레이션이 도착했어요 📚';
     const messageBody = body.body || '앱을 열어서 이번 달 추천 도서를 확인해보세요.';
-    const users = loadUsers();
+    const users = await listAllUsersMap();
     let sent = 0, failed = 0, removed = 0;
     const jobs = Object.keys(users).map(async (email) => {
       const u = users[email];
@@ -772,11 +934,10 @@ const server = http.createServer(async (req, res) => {
         sent++;
       } catch (e) {
         failed++;
-        if (e && (e.statusCode === 410 || e.statusCode === 404)) { u.pushSubscription = null; removed++; }
+        if (e && (e.statusCode === 410 || e.statusCode === 404)) { u.pushSubscription = null; removed++; await setUser(email, u); }
       }
     });
     await Promise.all(jobs);
-    saveUsers(users);
     sendJson(res, 200, { ok: true, sent, failed, removed });
     return;
   }
@@ -795,7 +956,10 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
     res.end(data);
   });
-});
+}
+
+// Firestore/외부 API 호출이 늘면서 예기치 못한 network reject가 전체 서버를 죽이지 않게 방어
+process.on('unhandledRejection', (e) => { console.error('처리 안 된 Promise 오류:', e); });
 
 server.listen(PORT, () => {
   console.log(`서버 실행 중: http://localhost:${PORT}`);
