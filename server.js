@@ -57,6 +57,14 @@ const PAYAPP_LINKVAL = process.env.PAYAPP_LINKVAL || '';
 // 페이앱이 결제완료를 통보할 우리 서버 주소. 예) https://book-type-test.onrender.com/api/payapp-webhook
 const PAYAPP_FEEDBACK_URL = process.env.PAYAPP_FEEDBACK_URL || '';
 
+// 구글/카카오 소셜 로그인. 각 콘솔에서 발급받은 값을 환경변수로 넣으면 자동으로 로그인 버튼이 활성화됨.
+// 구글: Google Cloud Console > API 및 서비스 > 사용자 인증 정보 > OAuth 클라이언트 ID(웹 애플리케이션)
+// 카카오: Kakao Developers > 내 애플리케이션 > 앱 키(REST API 키) / 카카오 로그인 > 보안(선택)
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const KAKAO_CLIENT_ID = process.env.KAKAO_CLIENT_ID || '';
+const KAKAO_CLIENT_SECRET = process.env.KAKAO_CLIENT_SECRET || ''; // 카카오 콘솔에서 "Client Secret" 활성화했을 때만 필요
+
 function readRawBody(req){
   return new Promise((resolve, reject) => {
     let body = '';
@@ -91,6 +99,56 @@ function callPayApp(params){
     });
     apiReq.on('error', reject);
     apiReq.write(payload);
+    apiReq.end();
+  });
+}
+
+// form-urlencoded POST, JSON 응답 (구글/카카오 OAuth 토큰 교환용 공용 헬퍼)
+function httpsPostForm(hostname, pathname, params){
+  return new Promise((resolve, reject) => {
+    const payload = new URLSearchParams(params).toString();
+    const options = {
+      hostname,
+      path: pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    };
+    const apiReq = https.request(options, (apiRes) => {
+      const chunks = [];
+      apiRes.on('data', (c) => chunks.push(c));
+      apiRes.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) { /* noop */ }
+        if (apiRes.statusCode >= 200 && apiRes.statusCode < 300 && data) { resolve(data); return; }
+        reject(new Error((data && (data.error_description || data.error || data.msg)) || `요청 실패 (${apiRes.statusCode})`));
+      });
+    });
+    apiReq.on('error', reject);
+    apiReq.write(payload);
+    apiReq.end();
+  });
+}
+
+// GET + Authorization 헤더, JSON 응답 (카카오 사용자 정보 조회용 공용 헬퍼)
+function httpsGetJson(hostname, pathname, headers){
+  return new Promise((resolve, reject) => {
+    const options = { hostname, path: pathname, method: 'GET', headers: headers || {} };
+    const apiReq = https.request(options, (apiRes) => {
+      const chunks = [];
+      apiRes.on('data', (c) => chunks.push(c));
+      apiRes.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) { /* noop */ }
+        if (apiRes.statusCode >= 200 && apiRes.statusCode < 300 && data) { resolve(data); return; }
+        reject(new Error((data && data.msg) || `요청 실패 (${apiRes.statusCode})`));
+      });
+    });
+    apiReq.on('error', reject);
     apiReq.end();
   });
 }
@@ -296,10 +354,37 @@ async function activateSubscription(email, days){
   return user.subscription;
 }
 
+// 구글/카카오로 처음 로그인한 이메일이면 계정을 새로 만들고(비밀번호 없음), 이미 있으면(이메일/비밀번호로 가입했던 경우 포함) 그대로 로그인 처리
+async function ensureSocialUser(email, provider){
+  const existing = await getUser(email);
+  if (existing) {
+    const providers = existing.authProviders || [];
+    if (!providers.includes(provider)) {
+      existing.authProviders = providers.concat([provider]);
+      await setUser(email, existing);
+    }
+    return existing;
+  }
+  const newUser = {
+    passwordHash: null,
+    salt: null,
+    authProviders: [provider],
+    createdAt: new Date().toISOString(),
+    resultType: null,
+    reviews: [],
+    pushSubscription: null,
+    subscription: { active: false, plan: 'free', expiresAt: null },
+  };
+  await setUser(email, newUser);
+  return newUser;
+}
+
 // 세션은 서버 메모리에 안 두고, 서명된 쿠키(email+만료시각을 HMAC으로 서명)로 대체함.
 // 이러면 재배포/재시작해도 로그인이 안 풀림 (검증이 서명 확인만으로 되니까 서버가 뭘 기억할 필요가 없음).
 const SESSION_SECRET = process.env.SESSION_SECRET || 'local-dev-secret-change-in-production';
 if (!process.env.SESSION_SECRET) console.log('[주의] SESSION_SECRET 환경변수가 없어서 로컬 기본값 사용 중. 배포 전 꼭 설정할 것 (안 그러면 서버 재시작마다 기존 로그인들이 전부 무효화됨).');
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function makeSalt(){ return crypto.randomBytes(16).toString('hex'); }
 function makeToken(){ return crypto.randomBytes(24).toString('hex'); }
@@ -322,6 +407,40 @@ function verifySessionToken(token){
     if (!data.email || !data.exp || Date.now() > data.exp) return null;
     return data.email;
   } catch (e) { return null; }
+}
+
+// OAuth 콜백 왕복 동안 넘겨야 하는 정보(어디로 로그인 유도됐는지 + CSRF 방지용)를 서명해서 state 파라미터에 실음
+function makeOAuthState(payload){
+  const data = base64url(JSON.stringify(Object.assign({ t: Date.now() }, payload || {})));
+  const sig = base64url(crypto.createHmac('sha256', SESSION_SECRET).update(data).digest());
+  return `${data}.${sig}`;
+}
+function verifyOAuthState(state){
+  if (!state) return null;
+  const parts = state.split('.');
+  if (parts.length !== 2) return null;
+  const [data, sig] = parts;
+  const expected = base64url(crypto.createHmac('sha256', SESSION_SECRET).update(data).digest());
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  try {
+    const obj = JSON.parse(Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    if (!obj.t || Date.now() - obj.t > 10 * 60000) return null; // 10분 지나면 만료 처리
+    return obj;
+  } catch (e) { return null; }
+}
+
+// 로그인 후 원래 하려던 동작(AI상담/심화리포트)으로 이어서 이동할 수 있게 홈 주소에 붙일 쿼리 계산
+function buildPostAuthRedirect(stateObj){
+  if (stateObj && (stateObj.next === 'chat' || stateObj.next === 'deepreport') && stateObj.code) {
+    return `/?next=${encodeURIComponent(stateObj.next)}&code=${encodeURIComponent(stateObj.code)}`;
+  }
+  return '/';
+}
+
+// 요청 헤더로 현재 서버의 외부 접속 주소(프로토콜+호스트)를 추정 (OAuth redirect_uri 계산용)
+function getBaseUrl(req){
+  const proto = (req.headers['x-forwarded-proto'] || (req.socket && req.socket.encrypted ? 'https' : 'http')).split(',')[0].trim();
+  return `${proto}://${req.headers.host}`;
 }
 
 function parseCookies(req){
@@ -361,7 +480,7 @@ function sendJson(res, status, obj, extraHeaders){
 }
 
 /* ---------- AI 상담: Claude API 호출 ---------- */
-function callClaude(systemPrompt, messages){
+function callClaude(systemPrompt, messages, maxTokens){
   return new Promise((resolve, reject) => {
     if (!ANTHROPIC_API_KEY) {
       reject(new Error('ANTHROPIC_API_KEY 환경변수가 설정되지 않았어요. (AI 상담 테스트를 위해 발급받은 키를 설정해주세요)'));
@@ -369,7 +488,7 @@ function callClaude(systemPrompt, messages){
     }
     const payload = JSON.stringify({
       model: ANTHROPIC_MODEL,
-      max_tokens: 500,
+      max_tokens: maxTokens || 500,
       system: systemPrompt,
       messages,
     });
@@ -501,6 +620,7 @@ async function handleRequest(req, res){
     const body = await readJsonBody(req).catch(() => null);
     if (!body || !body.email || !body.password) { sendJson(res, 400, { error: '이메일/비밀번호를 입력해주세요.' }); return; }
     const email = String(body.email).trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) { sendJson(res, 400, { error: '올바른 이메일 형식이 아니에요.' }); return; }
     if (body.password.length < 6) { sendJson(res, 400, { error: '비밀번호는 6자 이상으로 해주세요.' }); return; }
     if (await getUser(email)) { sendJson(res, 409, { error: '이미 가입된 이메일이에요.' }); return; }
     const salt = makeSalt();
@@ -525,6 +645,10 @@ async function handleRequest(req, res){
     if (!body || !body.email || !body.password) { sendJson(res, 400, { error: '이메일/비밀번호를 입력해주세요.' }); return; }
     const email = String(body.email).trim().toLowerCase();
     const user = await getUser(email);
+    if (user && !user.passwordHash) {
+      sendJson(res, 401, { error: '이 계정은 구글/카카오로 가입됐어요. 소셜 로그인 버튼을 이용해주세요.' });
+      return;
+    }
     if (!user || hashPassword(body.password, user.salt) !== user.passwordHash) {
       sendJson(res, 401, { error: '이메일 또는 비밀번호가 맞지 않아요.' });
       return;
@@ -537,6 +661,102 @@ async function handleRequest(req, res){
   // ---- 로그아웃 ----
   if (url.pathname === '/api/logout' && req.method === 'POST') {
     sendJson(res, 200, { ok: true }, { 'Set-Cookie': 'session=; HttpOnly; Path=/; Max-Age=0' });
+    return;
+  }
+
+  // ---- 로그인 화면에 소셜 로그인 버튼을 보여줄지 (환경변수 설정 여부로 판단) ----
+  if (url.pathname === '/api/auth-providers' && req.method === 'GET') {
+    sendJson(res, 200, { google: !!GOOGLE_CLIENT_ID, kakao: !!KAKAO_CLIENT_ID });
+    return;
+  }
+
+  // ---- 구글 로그인 시작: 구글 동의 화면으로 리다이렉트 ----
+  if (url.pathname === '/api/auth/google/start' && req.method === 'GET') {
+    if (!GOOGLE_CLIENT_ID) { res.writeHead(302, { Location: '/?authError=' + encodeURIComponent('구글 로그인이 아직 설정되지 않았어요.') }); res.end(); return; }
+    const state = makeOAuthState({ next: url.searchParams.get('next') || '', code: url.searchParams.get('code') || '' });
+    const redirectUri = `${getBaseUrl(req)}/api/auth/google/callback`;
+    const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid email profile',
+      prompt: 'select_account',
+      state,
+    }).toString();
+    res.writeHead(302, { Location: authUrl });
+    res.end();
+    return;
+  }
+
+  // ---- 구글 로그인 콜백: code를 토큰으로 교환하고, id_token 안의 이메일로 로그인/가입 처리 ----
+  if (url.pathname === '/api/auth/google/callback' && req.method === 'GET') {
+    const code = url.searchParams.get('code');
+    const stateObj = verifyOAuthState(url.searchParams.get('state'));
+    if (!code || !stateObj) { res.writeHead(302, { Location: '/?authError=' + encodeURIComponent('구글 로그인에 실패했어요. 다시 시도해주세요.') }); res.end(); return; }
+    try {
+      const redirectUri = `${getBaseUrl(req)}/api/auth/google/callback`;
+      const tokenData = await httpsPostForm('oauth2.googleapis.com', '/token', {
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      });
+      if (!tokenData.id_token) throw new Error('구글에서 사용자 정보를 받지 못했어요.');
+      // id_token은 우리 서버가 client_secret으로 인증된 채널로 구글에서 직접 받은 것이라 서명 재검증 없이 payload만 디코딩해서 사용
+      const claims = JSON.parse(Buffer.from(tokenData.id_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+      if (!claims.email || claims.email_verified === false) throw new Error('구글 이메일 인증이 확인되지 않았어요.');
+      const email = String(claims.email).trim().toLowerCase();
+      await ensureSocialUser(email, 'google');
+      const token = makeSessionToken(email);
+      res.writeHead(302, { Location: buildPostAuthRedirect(stateObj), 'Set-Cookie': `session=${token}; HttpOnly; Path=/; Max-Age=2592000` });
+      res.end();
+    } catch (e) {
+      res.writeHead(302, { Location: '/?authError=' + encodeURIComponent('구글 로그인 중 오류가 발생했어요.') });
+      res.end();
+    }
+    return;
+  }
+
+  // ---- 카카오 로그인 시작: 카카오 동의 화면으로 리다이렉트 ----
+  if (url.pathname === '/api/auth/kakao/start' && req.method === 'GET') {
+    if (!KAKAO_CLIENT_ID) { res.writeHead(302, { Location: '/?authError=' + encodeURIComponent('카카오 로그인이 아직 설정되지 않았어요.') }); res.end(); return; }
+    const state = makeOAuthState({ next: url.searchParams.get('next') || '', code: url.searchParams.get('code') || '' });
+    const redirectUri = `${getBaseUrl(req)}/api/auth/kakao/callback`;
+    const authUrl = 'https://kauth.kakao.com/oauth/authorize?' + new URLSearchParams({
+      client_id: KAKAO_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      state,
+    }).toString();
+    res.writeHead(302, { Location: authUrl });
+    res.end();
+    return;
+  }
+
+  // ---- 카카오 로그인 콜백: code를 토큰으로 교환하고, 프로필 조회로 얻은 이메일로 로그인/가입 처리 ----
+  if (url.pathname === '/api/auth/kakao/callback' && req.method === 'GET') {
+    const code = url.searchParams.get('code');
+    const stateObj = verifyOAuthState(url.searchParams.get('state'));
+    if (!code || !stateObj) { res.writeHead(302, { Location: '/?authError=' + encodeURIComponent('카카오 로그인에 실패했어요. 다시 시도해주세요.') }); res.end(); return; }
+    try {
+      const redirectUri = `${getBaseUrl(req)}/api/auth/kakao/callback`;
+      const tokenParams = { grant_type: 'authorization_code', client_id: KAKAO_CLIENT_ID, redirect_uri: redirectUri, code };
+      if (KAKAO_CLIENT_SECRET) tokenParams.client_secret = KAKAO_CLIENT_SECRET;
+      const tokenData = await httpsPostForm('kauth.kakao.com', '/oauth/token', tokenParams);
+      if (!tokenData.access_token) throw new Error('카카오에서 토큰을 받지 못했어요.');
+      const profile = await httpsGetJson('kapi.kakao.com', '/v2/user/me', { Authorization: `Bearer ${tokenData.access_token}` });
+      const kakaoEmail = profile.kakao_account && profile.kakao_account.email;
+      if (!kakaoEmail) throw new Error('카카오 계정에 이메일 제공 동의가 필요해요.');
+      const email = String(kakaoEmail).trim().toLowerCase();
+      await ensureSocialUser(email, 'kakao');
+      const token = makeSessionToken(email);
+      res.writeHead(302, { Location: buildPostAuthRedirect(stateObj), 'Set-Cookie': `session=${token}; HttpOnly; Path=/; Max-Age=2592000` });
+      res.end();
+    } catch (e) {
+      res.writeHead(302, { Location: '/?authError=' + encodeURIComponent('카카오 로그인 중 오류가 발생했어요.') });
+      res.end();
+    }
     return;
   }
 
@@ -660,6 +880,46 @@ async function handleRequest(req, res){
     const user = await getSessionUser(req);
     if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
     sendJson(res, 200, { history: user.chatHistory || [] });
+    return;
+  }
+
+  // ---- 심화 리포트 (유료 기능): 유형별로 한 번 생성해서 캐싱, 같은 유형이면 재생성 안 함 ----
+  if (url.pathname === '/api/deep-report' && req.method === 'POST') {
+    const user = await getSessionUser(req);
+    if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
+    if (!FREE_FOR_ALL && (!user.subscription || !user.subscription.active)) { sendJson(res, 402, { error: '구독 후 볼 수 있는 기능이에요.' }); return; }
+    const body = await readJsonBody(req).catch(() => null);
+    const tc = (body && body.typeContext) || {};
+    if (!tc.code) { sendJson(res, 400, { error: 'typeContext.code가 필요해요.' }); return; }
+
+    if (user.deepReport && user.deepReport.code === tc.code) {
+      sendJson(res, 200, { content: user.deepReport.content, cached: true });
+      return;
+    }
+
+    const systemPrompt = [
+      '너는 "책유형테스트" 서비스의 심화 리포트 작성 AI야.',
+      '아래 책 유형 정보를 바탕으로 이 유형 전용 심화 분석 리포트를 작성해.',
+      '반드시 아래 4개 섹션으로, 각 섹션 제목 앞에 "## "를 붙여서 구분해줘:',
+      '## 심층 성향 분석 (이 유형의 심리적 특징을 3~4문단으로 깊이 있게)',
+      '## 나에게 맞는 독서 루틴 (이 유형에게 맞는 독서 시간대·환경·방법 제안)',
+      '## 더 읽으면 좋은 책 5권 (이미 추천된 책과 겹치지 않는, 실제로 존재하는 책만. [[책:정확한 제목|저자]] 형식으로 표기하고 각 책마다 왜 이 유형에게 맞는지 한 줄 설명)',
+      '## 성장 포인트 (이 유형이 독서를 통해 성장하려면 어떤 시도를 해보면 좋을지 조언)',
+      '중요: 5권은 실제로 존재하는 책만 추천하고, 확실하지 않은 책은 절대 지어내지 마.',
+      `유형명: ${tc.name || ''}`,
+      `유형 설명: ${tc.longDesc || ''}`,
+      (tc.books && tc.books.length) ? `이미 추천된 책: ${tc.books.join(', ')}` : '',
+      '전체적으로 따뜻하고 통찰력 있는 톤으로, 진짜 전문 리포트처럼 정성껏 작성해줘.',
+    ].filter(Boolean).join('\n');
+
+    try {
+      const content = await callClaude(systemPrompt, [{ role: 'user', content: '심화 리포트 작성해줘' }], 1800);
+      user.deepReport = { code: tc.code, content, generatedAt: new Date().toISOString() };
+      await setUser(user.email, user);
+      sendJson(res, 200, { content, cached: false });
+    } catch (e) {
+      sendJson(res, 500, { error: String((e && e.message) || e) });
+    }
     return;
   }
 
@@ -825,6 +1085,23 @@ async function handleRequest(req, res){
     return;
   }
 
+  // ---- 관리자: 비밀번호 찾기 요청 시 수동으로 비밀번호 재설정 (이메일 발송 인프라 없어서 임시로 수동 처리) ----
+  if (url.pathname === '/api/admin/reset-password' && req.method === 'POST') {
+    const body = await readJsonBody(req).catch(() => null);
+    if (!ADMIN_KEY || !body || body.adminKey !== ADMIN_KEY) { sendJson(res, 401, { error: '관리자 키가 맞지 않아요.' }); return; }
+    const email = String(body.email || '').trim().toLowerCase();
+    const newPassword = String(body.newPassword || '');
+    if (newPassword.length < 6) { sendJson(res, 400, { error: '새 비밀번호는 6자 이상이어야 해요.' }); return; }
+    const user = await getUser(email);
+    if (!user) { sendJson(res, 404, { error: '해당 이메일 계정을 찾을 수 없어요.' }); return; }
+    const salt = makeSalt();
+    user.passwordHash = hashPassword(newPassword, salt);
+    user.salt = salt;
+    await setUser(email, user);
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
   // ---- 관리자: 대기중/매칭실패 입금 목록 조회 ----
   if (url.pathname === '/api/admin/pending-payments' && req.method === 'GET') {
     if (!ADMIN_KEY || url.searchParams.get('adminKey') !== ADMIN_KEY) { sendJson(res, 401, { error: '관리자 키가 맞지 않아요.' }); return; }
@@ -853,6 +1130,14 @@ async function handleRequest(req, res){
       <div id="msg"></div>
 
       <hr style="margin:32px 0;">
+      <h2>비밀번호 재설정</h2>
+      <p style="color:#666;font-size:13px;">비밀번호 찾기 문의 오면 여기서 새 비밀번호로 바꿔주고 유저에게 알려주면 됨.</p>
+      <input id="rpEmail" type="email" placeholder="회원 이메일">
+      <input id="rpPassword" type="text" placeholder="새 비밀번호 (6자 이상)">
+      <button id="rpGo">비밀번호 재설정</button>
+      <div id="rpMsg"></div>
+
+      <hr style="margin:32px 0;">
       <h2>대기중 입금 / 매칭 실패 목록</h2>
       <p style="color:#666;font-size:13px;">계좌이체 결제 요청했는데 자동매칭 안 된 건들. 새로고침 버튼 눌러서 확인.</p>
       <button id="refreshPending">새로고침</button>
@@ -878,6 +1163,19 @@ async function handleRequest(req, res){
           const data = await res.json();
           document.getElementById('msg').textContent = res.ok
             ? '완료: ' + email + ' 구독 활성화됨 (만료 ' + data.subscription.expiresAt + ')'
+            : '오류: ' + data.error;
+        };
+        document.getElementById('rpGo').onclick = async () => {
+          const adminKey = document.getElementById('adminKey').value;
+          const email = document.getElementById('rpEmail').value;
+          const newPassword = document.getElementById('rpPassword').value;
+          const res = await fetch('/api/admin/reset-password', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ adminKey, email, newPassword }),
+          });
+          const data = await res.json();
+          document.getElementById('rpMsg').textContent = res.ok
+            ? '완료: ' + email + ' 비밀번호 재설정됨'
             : '오류: ' + data.error;
         };
         document.getElementById('refreshPending').onclick = async () => {

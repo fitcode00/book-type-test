@@ -158,7 +158,7 @@
   .statbox .sv{font-size:24px;font-weight:700;color:var(--accent);}
   .statbox .sl{font-size:11.5px;color:var(--sub);margin-top:4px;}
   .reviewform{display:flex;flex-direction:column;gap:8px;margin-bottom:16px;}
-  .reviewform select,.reviewform textarea{padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:13.5px;font-family:inherit;background:var(--card);}
+  .reviewform select,.reviewform input,.reviewform textarea{padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:13.5px;font-family:inherit;background:var(--card);width:100%;box-sizing:border-box;}
   .reviewform textarea{min-height:80px;resize:vertical;}
   .reviewlist{display:flex;flex-direction:column;gap:10px;}
   .reviewitem{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;}
@@ -671,7 +671,8 @@ function renderAuth(mode){
     <div class="brand">TEXT TYPE</div>
     <div class="authbox">
       <h2 class="serif">${mode === 'signup' ? '회원가입' : '로그인'}</h2>
-      <p class="authhint">${pendingAfterAuth === 'chat' ? 'AI 상담은 회원만 이용할 수 있어요.' : '회원으로 진행하면 결과 후 AI 상담을 쓸 수 있어요.'}</p>
+      <p class="authhint">${pendingAfterAuth === 'chat' ? 'AI 상담은 회원만 이용할 수 있어요.' : pendingAfterAuth === 'deepreport' ? '심화 리포트는 회원만 볼 수 있어요.' : '회원으로 진행하면 결과 후 AI 상담을 쓸 수 있어요.'}</p>
+      <div id="socialLoginBox"></div>
       <input type="email" id="authEmail" placeholder="이메일" autocomplete="username">
       <input type="password" id="authPw" placeholder="비밀번호 (6자 이상)" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}">
       <div class="autherr" id="authErr"></div>
@@ -679,19 +680,41 @@ function renderAuth(mode){
         <button class="btn" id="authSubmitBtn">${mode === 'signup' ? '가입하고 시작하기' : '로그인'}</button>
       </div>
       <p class="authswitch" id="authSwitch">${mode === 'signup' ? '이미 계정이 있으신가요? <a href="#" id="toLogin">로그인</a>' : '계정이 없으신가요? <a href="#" id="toSignup">회원가입</a>'}</p>
+      ${mode === 'login' ? `<p class="authswitch" id="forgotPwLink" style="margin-top:6px;"><a href="#">비밀번호를 잊으셨나요?</a></p>` : ''}
       <button class="btn ghost" id="authBackBtn" style="margin-top:18px;">뒤로가기</button>
     </div>`;
 
   document.getElementById('authBackBtn').onclick = () => { pendingAfterAuth = null; pendingChatCode = null; renderIntro(); };
+
+  // 소셜 로그인 버튼: 서버에 키가 설정된 항목만 보여줌. pendingAfterAuth가 있으면 로그인 후 원래 하려던 화면(AI상담/심화리포트)으로 바로 이어지게 next/code를 붙여서 보냄.
+  fetch('/api/auth-providers').then((r) => r.json()).then((data) => {
+    const box = document.getElementById('socialLoginBox');
+    if (!box) return;
+    const qs = pendingAfterAuth && pendingChatCode
+      ? `?next=${encodeURIComponent(pendingAfterAuth)}&code=${encodeURIComponent(pendingChatCode)}`
+      : '';
+    let html = '';
+    if (data.google) html += `<a class="btn ghost" style="display:block;text-align:center;margin-bottom:8px;text-decoration:none;" href="/api/auth/google/start${qs}">Google로 계속하기</a>`;
+    if (data.kakao) html += `<a class="btn" style="display:block;text-align:center;margin-bottom:8px;text-decoration:none;background:#FEE500;color:#191600;" href="/api/auth/kakao/start${qs}">카카오로 계속하기</a>`;
+    if (html) html += `<p style="text-align:center;font-size:11.5px;color:var(--sub);margin:12px 0 16px;">또는 이메일로 계속하기</p>`;
+    box.innerHTML = html;
+  }).catch(() => {});
   const switchLink = document.getElementById(mode === 'signup' ? 'toLogin' : 'toSignup');
   if (switchLink) switchLink.onclick = (e) => { e.preventDefault(); renderAuth(mode === 'signup' ? 'login' : 'signup'); };
+  const forgotLink = document.getElementById('forgotPwLink');
+  if (forgotLink) forgotLink.querySelector('a').onclick = (e) => {
+    e.preventDefault();
+    document.getElementById('authErr').textContent = '가입하신 이메일 주소를 fitcode00@gmail.com으로 보내주시면 비밀번호 재설정을 도와드릴게요.';
+  };
 
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   document.getElementById('authSubmitBtn').onclick = async () => {
     const email = document.getElementById('authEmail').value.trim();
     const password = document.getElementById('authPw').value;
     const errBox = document.getElementById('authErr');
     errBox.textContent = '';
     if (!email || !password) { errBox.textContent = '이메일/비밀번호를 입력해주세요.'; return; }
+    if (!EMAIL_RE.test(email)) { errBox.textContent = '올바른 이메일 형식이 아니에요.'; return; }
     try {
       const res = await fetch(mode === 'signup' ? '/api/signup' : '/api/login', {
         method: 'POST',
@@ -705,6 +728,9 @@ function renderAuth(mode){
       if (pendingAfterAuth === 'chat' && pendingChatCode) {
         const code = pendingChatCode; pendingAfterAuth = null; pendingChatCode = null;
         openAiChat(code);
+      } else if (pendingAfterAuth === 'deepreport' && pendingChatCode) {
+        const code = pendingChatCode; pendingAfterAuth = null; pendingChatCode = null;
+        openDeepReport(code);
       } else {
         pendingAfterAuth = null;
         current = 0; renderQuestion();
@@ -849,6 +875,12 @@ function showResult(code, sums, shared){
     </div>
 
     ${shared ? '' : `
+    <div class="aiconsult" style="background:#2d2a26;color:#f3efe8;">
+      <div class="aiconsult-t">🔒 심화 분석 리포트</div>
+      <p style="color:#cfc9bd;">${type.name} 유형을 더 깊이 파고드는 성향 분석, 나만의 독서 루틴, 추가 추천 도서 5권, 성장 포인트까지 — AI가 이 유형만을 위해 새로 써주는 리포트예요.</p>
+      <button class="btn" id="deepReportBtn">${(currentUser && (currentUser.freeMode || (currentUser.subscription && currentUser.subscription.active))) ? '심화 리포트 보기' : '구독하고 보기'}</button>
+    </div>
+
     <div class="aiconsult">
       <div class="aiconsult-t">💬 더 얘기해보고 싶다면?</div>
       <p>내 유형을 아는 AI와 자유롭게 책 얘기하고, 고민에 맞는 책도 처방받아보세요.</p>
@@ -872,7 +904,7 @@ function showResult(code, sums, shared){
         <button class="btn ghost" id="saveImgBtn">이미지로 저장</button>
         <button class="btn ghost" id="copyLinkBtn">링크 복사</button>
         <button class="btn" id="restartBtn">다시 하기</button>
-        ${currentUser ? `<button class="btn ghost" id="myPageBtn2">마이페이지</button>` : ''}
+        ${currentUser ? `<button class="btn ghost" id="myPageBtn2">홈</button>` : ''}
       `}
     </div>
 
@@ -885,6 +917,10 @@ function showResult(code, sums, shared){
     document.getElementById('aiChatBtn').onclick = () => {
       trackEvent('click_ai_chat', { type: code });
       openAiChat(code);
+    };
+    document.getElementById('deepReportBtn').onclick = () => {
+      trackEvent('click_deep_report', { type: code });
+      openDeepReport(code);
     };
     if (currentUser) {
       currentUser.resultType = code; // 서버 응답 기다리지 않고 로컬에도 바로 반영 (마이페이지에서 바로 보이게)
@@ -912,7 +948,7 @@ function showResult(code, sums, shared){
       renderIntro();
     };
     if (document.getElementById('myPageBtn2')) {
-      document.getElementById('myPageBtn2').onclick = () => renderMyPage();
+      document.getElementById('myPageBtn2').onclick = () => renderHome();
     }
     if(document.getElementById('shareBtn')){
       document.getElementById('shareBtn').onclick = () => {
@@ -976,9 +1012,19 @@ function openAiChat(code){
   renderChat(code);
 }
 
+// 심화 리포트 진입 지점 공용 처리: 비회원->로그인, 미구독->구독안내, 구독중->리포트
+function openDeepReport(code){
+  if (!currentUser) { pendingAfterAuth = 'deepreport'; pendingChatCode = code; renderAuth(); return; }
+  const hasAccess = currentUser.freeMode || (currentUser.subscription && currentUser.subscription.active);
+  if (!hasAccess) { renderSubscribe(code, 'deepreport'); return; }
+  renderDeepReport(code);
+}
+
 /* ---------- 구독 안내 ---------- */
 let subPollTimer = null;
-async function renderSubscribe(code){
+async function renderSubscribe(code, target){
+  target = target || 'chat'; // 'chat' | 'deepreport' — 결제 완료 후 이동할 화면
+  const goNext = () => { if (target === 'deepreport') renderDeepReport(code); else renderChat(code); };
   if (subPollTimer) { clearInterval(subPollTimer); subPollTimer = null; }
   app.innerHTML = `
     <div class="brand">TEXT TYPE · AI 상담</div>
@@ -1029,7 +1075,7 @@ async function renderSubscribe(code){
               if (me.loggedIn && me.subscription && me.subscription.active) {
                 clearInterval(subPollTimer); subPollTimer = null;
                 currentUser = me;
-                renderChat(code);
+                goNext();
               }
             } catch (e) { /* 무시하고 다음 폴링 때 재시도 */ }
           }, 3000);
@@ -1056,7 +1102,7 @@ async function renderSubscribe(code){
             if (me.loggedIn && me.subscription && me.subscription.active) {
               clearInterval(subPollTimer); subPollTimer = null;
               currentUser = me;
-              renderChat(code);
+              goNext();
             }
           } catch (e) { /* 무시하고 다음 폴링 때 재시도 */ }
         }, 5000);
@@ -1192,77 +1238,16 @@ async function renderChat(code){
 }
 
 /* ---------- 로그인 홈 ---------- */
-function renderHome(){
-  const code = currentUser.resultType;
-  const type = TYPES[code];
-  const reviews = (currentUser.reviews || []).slice(0, 3);
-  const monthIdx = new Date().getMonth() % type.books.length; // 이달의 책: 월 기준 순환 선택
-  const monthBook = type.books[monthIdx];
-
-  function coverHtml(b, i, sizeStyle){
-    const local = LOCAL_COVERS[code] && LOCAL_COVERS[code][i];
-    return `<div class="cover" style="${sizeStyle}background:${type.color};position:relative;overflow:hidden;">
-      <span style="${local ? 'display:none;' : ''}">${escapeHtml(b.title[0])}</span>
-      ${local ? `<img alt="${escapeHtml(b.title)} 표지" src="${local}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;">` : ''}
-    </div>`;
-  }
-
-  app.innerHTML = `
-    <div class="brand">TEXT TYPE · ${navLine('home', code)}</div>
-
-    <div class="card homecard">
-      <div class="mascot-wrap"><img class="mascot-img mascot-lg" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터" style="background:${type.color};"></div>
-      <h2 class="serif" style="margin:8px 0 4px;">${type.name}</h2>
-      <p style="font-size:13px;color:var(--sub);margin:0 0 16px;">${type.desc}</p>
-      <div class="btnrow"><button class="btn" id="homeResultBtn">결과 보기</button></div>
-    </div>
-
-    <div class="sectiontitle" style="margin-top:28px;">📅 이달의 책</div>
-    <div class="card" style="display:flex;gap:14px;align-items:center;">
-      ${coverHtml(monthBook, monthIdx, 'width:56px;aspect-ratio:3/4;flex-shrink:0;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:\'Noto Serif KR\',serif;font-weight:700;')}
-      <div><p style="margin:0 0 2px;font-size:13.5px;font-weight:600;">${escapeHtml(monthBook.title)}</p><p style="margin:0;font-size:12px;color:var(--sub);">${escapeHtml(monthBook.author)}</p></div>
-    </div>
-
-    <div class="sectiontitle" style="margin-top:28px;">추천받은 책</div>
-    <div class="books">
-      ${type.books.slice(0, 3).map((b, i) => `
-        <div class="book">
-          ${coverHtml(b, i, '')}
-          <p class="title">${escapeHtml(b.title)}</p>
-          <p class="author">${escapeHtml(b.author)}</p>
-        </div>`).join('')}
-    </div>
-    <div class="btnrow" style="margin-top:14px;"><button class="btn ghost" id="homeBooksBtn">책 목록 보기</button></div>
-
-    <div class="sectiontitle" style="margin-top:28px;">독후감</div>
-    ${reviews.length ? `
-    <div class="reviewlist">
-      ${reviews.map(r => `
-        <div class="reviewitem">
-          <div class="rt">${escapeHtml(r.bookTitle)}</div>
-          <div class="rd">${escapeHtml(r.content)}</div>
-          <div class="rf"><span>${new Date(r.createdAt).toLocaleDateString('ko-KR')}</span></div>
-        </div>`).join('')}
-    </div>` : `<p style="text-align:center;color:var(--sub);font-size:13px;">아직 남긴 독후감이 없어요.</p>`}
-    <div class="btnrow" style="margin-top:14px;"><button class="btn" id="homeReviewBtn">독후감 쓰기</button></div>`;
-
-  wireNavLine(code);
-  document.getElementById('homeResultBtn').onclick = () => showResult(currentUser.resultType, null, false);
-  document.getElementById('homeBooksBtn').onclick = () => showResult(currentUser.resultType, null, false);
-  document.getElementById('homeReviewBtn').onclick = () => renderMyPage();
-}
-
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-/* ---------- 공통 네비게이션 (결과/홈/마이페이지/AI상담 사이 이동) ---------- */
+/* ---------- 공통 네비게이션 (홈 하나를 중심으로 결과/AI상담이 갈라져나가는 구조) ---------- */
 function navLine(activeKey, code){
   if (!currentUser) return '';
   const items = [];
   if (currentUser.resultType) items.push({ key: 'home', label: '홈' });
   if (code) items.push({ key: 'result', label: '결과' });
-  items.push({ key: 'mypage', label: '마이페이지' });
   if (code || currentUser.resultType) items.push({ key: 'chat', label: 'AI상담' });
   return items.map((it) => it.key === activeKey
     ? `<span style="font-weight:600;">${it.label}</span>`
@@ -1277,13 +1262,78 @@ function wireNavLine(code){
       const c = code || currentUser.resultType;
       if (k === 'home') renderHome();
       else if (k === 'result') showResult(c, null, false);
-      else if (k === 'mypage') renderMyPage();
       else if (k === 'chat') openAiChat(c);
     };
   });
 }
 
-/* ---------- 마이페이지 ---------- */
+/* ---------- 심화 리포트 (유료) ---------- */
+async function renderDeepReport(code){
+  const type = TYPES[code];
+  app.innerHTML = `
+    <div class="brand">TEXT TYPE · 심화 리포트${currentUser ? ` · ${navLine('deepreport', code)}` : ''}</div>
+    <div class="resulthead" style="padding-bottom:0;">
+      <div class="mascot-wrap"><img class="mascot-img mascot-sm" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터" style="background:${type.color};"></div>
+      <div class="code">${code} 유형 · 심화 분석</div>
+      <h1 class="serif" style="font-size:22px;">${type.name}</h1>
+    </div>
+    <div class="card" id="drBox" style="margin-top:16px;text-align:center;color:var(--sub);font-size:13.5px;">
+      리포트를 만들고 있어요... 처음 보는 유형이면 몇 초 걸릴 수 있어요.
+    </div>
+    <div class="btnrow" style="margin-top:24px;">
+      <button class="btn ghost" id="drBackBtn">결과로 돌아가기</button>
+    </div>`;
+  wireNavLine(code);
+  document.getElementById('drBackBtn').onclick = () => showResult(code, null, false);
+
+  try {
+    const res = await fetch('/api/deep-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ typeContext: { code, name: type.name, longDesc: type.longDesc, books: type.books.map(b => b.title) } }),
+    });
+    const data = await res.json();
+    const box = document.getElementById('drBox');
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 402) { renderSubscribe(code, 'deepreport'); return; }
+      box.textContent = data.error || '리포트를 불러오지 못했어요.';
+      return;
+    }
+    trackEvent('view_deep_report', { type: code, cached: !!data.cached });
+    const { plain, books } = parseBookMarkers(data.content || '');
+    const sections = plain.split(/\n(?=##\s+)/).map(s => s.trim()).filter(Boolean);
+    box.style.textAlign = 'left';
+    box.innerHTML = sections.map((sec) => {
+      const m = sec.match(/^##\s+(.+)\n?([\s\S]*)$/);
+      const title = m ? m[1].trim() : '';
+      const body = (m ? m[2] : sec).trim();
+      return `${title ? `<div class="sectiontitle" style="margin-top:20px;">${escapeHtml(title)}</div>` : ''}<p class="longdesc">${escapeHtml(body).replace(/\n/g, '<br>')}</p>`;
+    }).join('');
+    if (books.length) attachDeepReportBookLinks(box, books, code);
+  } catch (e) {
+    document.getElementById('drBox').textContent = '리포트를 불러오지 못했어요. 네트워크를 확인해주세요.';
+  }
+}
+
+// 심화 리포트 화면 전용 책 링크 붙이기 (attachBookLinks는 채팅 말풍선(.msgwrap) 구조 전제라 여기선 별도 구현)
+function attachDeepReportBookLinks(box, books, code){
+  const linksBox = document.createElement('div');
+  linksBox.className = 'booklinks';
+  linksBox.style.marginTop = '20px';
+  box.appendChild(linksBox);
+  books.forEach(async ({ title }) => {
+    const link = await resolveBookLink(title, code);
+    if (!link) return;
+    const a = document.createElement('a');
+    a.className = 'booklink';
+    a.href = link; a.target = '_blank'; a.rel = 'noopener sponsored';
+    a.textContent = `📖 ${title} 구매하기 ↗`;
+    a.onclick = () => trackEvent('click_ai_book_link', { type: code, book: title, source: 'deep_report' });
+    linksBox.appendChild(a);
+  });
+}
+
+/* ---------- 홈 (독서활동 대시보드 겸 메인 화면) ---------- */
 
 function bookCoverHtml(title, color, localSrc, elId){
   return `<div class="cover" ${elId ? `id="${elId}"` : ''} style="background:${color};">
@@ -1292,7 +1342,7 @@ function bookCoverHtml(title, color, localSrc, elId){
   </div>`;
 }
 
-async function renderMyPage(){
+async function renderHome(){
   const type = currentUser.resultType ? TYPES[currentUser.resultType] : null;
   const reviews = currentUser.reviews || [];
   const recommendedBooks = currentUser.recommendedBooks || [];
@@ -1302,12 +1352,21 @@ async function renderMyPage(){
   // 내 책장 = 유형 기본 추천 6권 + AI가 대화 중 새로 추천해준 책(중복 제목 제외)
   const baseTitles = type ? type.books.map((b) => b.title) : [];
   const extraBooks = recommendedBooks.filter((b) => !baseTitles.includes(b.title));
+  const monthBook = type ? type.books[new Date().getMonth() % type.books.length] : null;
+  const monthIdx = type ? type.books.indexOf(monthBook) : -1;
 
   app.innerHTML = `
-    <div class="brand">마이페이지 · ${navLine('mypage', currentUser.resultType)}</div>
+    <div class="brand">TEXT TYPE · ${navLine('home', currentUser.resultType)}</div>
     <p style="font-size:12px;color:var(--sub);margin:2px 0 4px;">${escapeHtml(currentUser.email)}${type ? ` · ${type.name}` : ''}</p>
 
-    <div class="sectiontitle" style="margin-top:18px;">독서활동</div>
+    ${type ? `
+    <div class="sectiontitle" style="margin-top:18px;">📅 이달의 책</div>
+    <div class="card" style="display:flex;gap:14px;align-items:center;">
+      ${bookCoverHtml(monthBook.title, type.color, LOCAL_COVERS[currentUser.resultType] && LOCAL_COVERS[currentUser.resultType][monthIdx])}
+      <div><p style="margin:0 0 2px;font-size:13.5px;font-weight:600;">${escapeHtml(monthBook.title)}</p><p style="margin:0;font-size:12px;color:var(--sub);">${escapeHtml(monthBook.author)}</p></div>
+    </div>` : ''}
+
+    <div class="sectiontitle" style="margin-top:24px;">독서활동</div>
     <div class="statgrid" style="grid-template-columns:repeat(4,1fr);">
       <div class="statbox"><div class="sv">${daysSince}</div><div class="sl">가입 후 일수</div></div>
       <div class="statbox"><div class="sv">${reviews.length}</div><div class="sl">남긴 독후감</div></div>
@@ -1333,11 +1392,13 @@ async function renderMyPage(){
       }).join('') : ''}
       ${extraBooks.map((b, i) => `<div class="book">${bookCoverHtml(b.title, '#ccc4b6', '', `mycover-${i}`)}<p class="title">${escapeHtml(b.title)}</p><p class="author">${escapeHtml(b.author || 'AI 추천')}</p></div>`).join('')}
     </div>` : `<p style="text-align:center;color:var(--sub);font-size:13px;">테스트를 먼저 해보세요.</p>`}
+    ${type ? `<div class="btnrow" style="margin-top:14px;"><button class="btn ghost" id="homeResultBtn">결과 다시 보기</button></div>` : ''}
 
     <div class="sectiontitle" style="margin-top:24px;">독후감</div>
     ${type ? `
     <div class="reviewform">
       <select id="reviewBook">${(type.books.concat(extraBooks)).map(b => `<option value="${escapeHtml(b.title)}">${escapeHtml(b.title)}</option>`).join('')}</select>
+      <input type="text" id="reviewBookCustom" placeholder="목록에 없는 책이면 여기에 제목 직접 입력">
       <textarea id="reviewContent" placeholder="이 책 어땠나요?"></textarea>
       <button class="btn" id="reviewAddBtn">독후감 남기기</button>
     </div>` : ''}
@@ -1355,13 +1416,15 @@ async function renderMyPage(){
     </div>`;
 
   wireNavLine(currentUser.resultType);
+  if (type) document.getElementById('homeResultBtn').onclick = () => showResult(currentUser.resultType, null, false);
 
   // 로컬 표지 없는 AI 추천 책은 실시간 API로 표지 시도
   extraBooks.forEach((b, i) => loadCover(`mycover-${i}`, b.title, b.author));
 
   if (type) {
     document.getElementById('reviewAddBtn').onclick = async () => {
-      const bookTitle = document.getElementById('reviewBook').value;
+      const custom = document.getElementById('reviewBookCustom').value.trim();
+      const bookTitle = custom || document.getElementById('reviewBook').value;
       const content = document.getElementById('reviewContent').value.trim();
       if (!content) return;
       const res = await fetch('/api/reviews', {
@@ -1370,7 +1433,7 @@ async function renderMyPage(){
         body: JSON.stringify({ bookTitle, content }),
       });
       const data = await res.json();
-      if (res.ok) { currentUser.reviews = data.reviews; trackEvent('add_review'); renderMyPage(); }
+      if (res.ok) { currentUser.reviews = data.reviews; trackEvent('add_review'); renderHome(); }
     };
     document.getElementById('reviewList').addEventListener('click', async (e) => {
       if (!e.target.classList.contains('rdel')) return;
@@ -1381,7 +1444,7 @@ async function renderMyPage(){
         body: JSON.stringify({ id }),
       });
       const data = await res.json();
-      if (res.ok) { currentUser.reviews = data.reviews; renderMyPage(); }
+      if (res.ok) { currentUser.reviews = data.reviews; renderHome(); }
     });
   }
   document.getElementById('logoutBtn').onclick = async () => {
@@ -1546,7 +1609,24 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight){
 /* ---------- 시작 ---------- */
 (async function boot(){
   await Promise.all([loadCoversManifest(), loadLinksManifest(), fetchMe()]);
-  const sharedCode = new URLSearchParams(location.search).get('type');
+  const params = new URLSearchParams(location.search);
+  const sharedCode = params.get('type');
+  const authError = params.get('authError');
+  const next = params.get('next');
+  const nextCode = params.get('code');
+
+  if (authError) {
+    history.replaceState(null, '', location.pathname);
+    alert(authError);
+  }
+
+  // 구글/카카오 로그인 콜백 직후: 로그인 전에 하려던 동작(AI상담/심화리포트)으로 바로 이어감
+  if (next && nextCode && TYPES[nextCode] && currentUser) {
+    history.replaceState(null, '', location.pathname);
+    if (next === 'chat') { openAiChat(nextCode); return; }
+    if (next === 'deepreport') { openDeepReport(nextCode); return; }
+  }
+
   if(sharedCode && TYPES[sharedCode]){
     // 공유 링크로 들어온 경우: 내 답변이 없으니 게이지 없이 결과만 보여줌
     showResult(sharedCode, null, true);
