@@ -550,6 +550,18 @@ async function fetchMe(){
   } catch (e) { currentUser = null; }
 }
 
+// 문의 접수 공용 함수: 로그인 상태면 서버가 세션 이메일을 쓰고, 비로그인이면 email을 같이 보내야 함
+async function submitSupport(category, email, message){
+  const res = await fetch('/api/support', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category, email, message }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || '문의 접수에 실패했어요.');
+  return data;
+}
+
 /* ---------- 월간 큐레이션 푸시 알림 ---------- */
 function urlBase64ToUint8Array(base64String){
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -704,7 +716,28 @@ function renderAuth(mode){
   const forgotLink = document.getElementById('forgotPwLink');
   if (forgotLink) forgotLink.querySelector('a').onclick = (e) => {
     e.preventDefault();
-    document.getElementById('authErr').textContent = '가입하신 이메일 주소를 fitcode00@gmail.com으로 보내주시면 비밀번호 재설정을 도와드릴게요.';
+    // 예전엔 "이메일 직접 보내라"는 안내문만 띄웠는데, 이제는 앱 안에서 바로 접수되게 폼으로 교체
+    forgotLink.innerHTML = `
+      <span style="display:block;text-align:left;font-size:12.5px;color:var(--sub);margin-bottom:6px;">계정 이메일을 입력하고 요청을 보내면, 확인 후 이메일로 비밀번호 재설정을 도와드릴게요. 자동 처리가 아니라 직접 확인하는 거라 시간이 좀 걸릴 수 있어요.</span>
+      <input type="email" id="fpEmail" placeholder="가입한 이메일" style="margin-bottom:8px;">
+      <button class="btn ghost" id="fpSendBtn" style="width:100%;">비밀번호 재설정 요청 보내기</button>
+      <span id="fpMsg" style="display:block;font-size:12px;margin-top:6px;"></span>`;
+    const prefill = document.getElementById('authEmail');
+    if (prefill && prefill.value.trim()) document.getElementById('fpEmail').value = prefill.value.trim();
+    document.getElementById('fpSendBtn').onclick = async () => {
+      const email = document.getElementById('fpEmail').value.trim();
+      const msgEl = document.getElementById('fpMsg');
+      if (!EMAIL_RE.test(email)) { msgEl.style.color = '#b5432b'; msgEl.textContent = '올바른 이메일 형식이 아니에요.'; return; }
+      try {
+        await submitSupport('password_reset', email, '비밀번호를 잊어버렸어요. 재설정 도와주세요.');
+        msgEl.style.color = 'var(--accent)';
+        msgEl.textContent = '요청 접수됐어요. 확인 후 이메일로 연락드릴게요.';
+        document.getElementById('fpSendBtn').disabled = true;
+      } catch (err) {
+        msgEl.style.color = '#b5432b';
+        msgEl.textContent = err.message;
+      }
+    };
   };
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1033,11 +1066,40 @@ async function renderSubscribe(code, target){
       <p class="authhint" id="subInfo">불러오는 중...</p>
       <div id="subBankBox" style="display:none;margin-top:14px;padding:14px;border-radius:10px;background:#f6f5f2;font-size:14px;line-height:1.7;"></div>
       <div class="btnrow" id="subActions" style="margin-top:14px;"></div>
-      <p style="font-size:11.5px;color:var(--sub);margin-top:16px;">결제 관련 문의는 fitcode00@gmail.com으로 연락주세요.</p>
+      <div style="margin-top:20px;">
+        <p style="font-size:11.5px;color:var(--sub);margin:0 0 8px;" id="supportToggleText">결제나 환불 관련 문의가 있으면 <a href="#" id="supportToggleLink" style="color:var(--accent);">여기서 바로 남겨주세요</a>.</p>
+        <div id="supportBox" style="display:none;"></div>
+      </div>
       <button class="btn ghost" id="subBackBtn" style="margin-top:18px;">뒤로가기</button>
     </div>`;
 
   document.getElementById('subBackBtn').onclick = () => { if (subPollTimer) clearInterval(subPollTimer); showResult(code, null, false); };
+
+  document.getElementById('supportToggleLink').onclick = (e) => {
+    e.preventDefault();
+    document.getElementById('supportToggleText').style.display = 'none';
+    const box = document.getElementById('supportBox');
+    box.style.display = 'block';
+    box.innerHTML = `
+      <textarea id="supportMsg" placeholder="환불 요청이나 문의 내용을 적어주세요" style="width:100%;min-height:70px;padding:10px;border-radius:8px;border:1px solid var(--line);font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>
+      <button class="btn ghost" id="supportSendBtn" style="width:100%;margin-top:8px;">문의 보내기</button>
+      <span id="supportMsgResult" style="display:block;font-size:12px;margin-top:6px;"></span>
+      <p style="font-size:11px;color:var(--sub);margin-top:8px;">※ 환불은 자동이 아니라 직접 확인 후 진행돼요. 정당한 환불 요청은 영업일 기준 3일 이내에 처리할게요. 급한 경우 fitcode00@gmail.com으로 바로 연락해도 돼요.</p>`;
+    document.getElementById('supportSendBtn').onclick = async () => {
+      const message = document.getElementById('supportMsg').value.trim();
+      const resultEl = document.getElementById('supportMsgResult');
+      if (!message) { resultEl.style.color = '#b5432b'; resultEl.textContent = '내용을 입력해주세요.'; return; }
+      try {
+        await submitSupport('refund', currentUser && currentUser.email, message);
+        resultEl.style.color = 'var(--accent)';
+        resultEl.textContent = '접수됐어요. fitcode00@gmail.com으로 답장드릴게요.';
+        document.getElementById('supportSendBtn').disabled = true;
+      } catch (err) {
+        resultEl.style.color = '#b5432b';
+        resultEl.textContent = err.message;
+      }
+    };
+  };
 
   try {
     const res = await fetch('/api/payment-info');

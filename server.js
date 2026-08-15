@@ -342,6 +342,38 @@ function savePayments(data){
 function makeMatchCode(){
   return crypto.randomBytes(2).toString('hex').toUpperCase(); // 예: A3F9
 }
+
+// 문의(환불 요청/비밀번호 찾기 등) 기록. 계정 데이터만큼 중요해서 users와 동일하게 Firestore/로컬 듀얼 백엔드 사용.
+const SUPPORT_FILE = path.join(DATA_DIR, 'support.json');
+function loadSupportFile(){
+  try { return JSON.parse(fs.readFileSync(SUPPORT_FILE, 'utf8')); } catch (e) { return []; }
+}
+function saveSupportFile(list){
+  fs.writeFileSync(SUPPORT_FILE, JSON.stringify(list, null, 2));
+}
+async function addSupportEntry(entry){
+  const id = makeToken().slice(0, 16);
+  if (USE_FIRESTORE) {
+    await firestoreRequest('PATCH', `support/${id}`, { fields: toFirestoreFields(Object.assign({ id }, entry)) });
+    return;
+  }
+  const list = loadSupportFile();
+  list.unshift(Object.assign({ id }, entry));
+  saveSupportFile(list);
+}
+async function listSupportEntries(){
+  if (!USE_FIRESTORE) return loadSupportFile();
+  const result = [];
+  let pageToken = '';
+  do {
+    const qs = 'pageSize=300' + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
+    const data = await firestoreRequest('GET', `support?${qs}`);
+    ((data && data.documents) || []).forEach((doc) => result.push(fromFirestoreFields(doc.fields)));
+    pageToken = (data && data.nextPageToken) || '';
+  } while (pageToken);
+  result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return result;
+}
 async function activateSubscription(email, days){
   const user = await getUser(email);
   if (!user) return null;
@@ -883,7 +915,8 @@ async function handleRequest(req, res){
     return;
   }
 
-  // ---- 심화 리포트 (유료 기능): 유형별로 한 번 생성해서 캐싱, 같은 유형이면 재생성 안 함 ----
+  // ---- 심화 리포트 (유료 기능): 유형 정보 + 이 사용자의 실제 활동(독후감/AI상담/추천받은 책)을 반영해 개인화.
+  // 활동 내역이 안 바뀌었으면 캐시된 걸 재사용(비용 절감), 독후감/상담이 새로 쌓이면 자동으로 다시 생성.
   if (url.pathname === '/api/deep-report' && req.method === 'POST') {
     const user = await getSessionUser(req);
     if (!user) { sendJson(res, 401, { error: '로그인이 필요해요.' }); return; }
@@ -892,29 +925,46 @@ async function handleRequest(req, res){
     const tc = (body && body.typeContext) || {};
     if (!tc.code) { sendJson(res, 400, { error: 'typeContext.code가 필요해요.' }); return; }
 
-    if (user.deepReport && user.deepReport.code === tc.code) {
+    const reviews = Array.isArray(user.reviews) ? user.reviews : [];
+    const chatHistory = Array.isArray(user.chatHistory) ? user.chatHistory : [];
+    const recommendedBooks = Array.isArray(user.recommendedBooks) ? user.recommendedBooks : [];
+    // 독후감 수 / 상담 메시지 수가 마지막 생성 시점과 같으면 활동 변화가 없다는 뜻 -> 캐시 재사용
+    const fingerprint = `${tc.code}|${reviews.length}|${chatHistory.length}`;
+    if (user.deepReport && user.deepReport.fingerprint === fingerprint) {
       sendJson(res, 200, { content: user.deepReport.content, cached: true });
       return;
     }
 
+    const reviewsText = reviews.slice(0, 5)
+      .map((r) => `- "${r.bookTitle}" 독후감: ${String(r.content || '').slice(0, 200)}`)
+      .join('\n');
+    const recommendedText = recommendedBooks.slice(-10).map((b) => b.title).join(', ');
+    const recentChatText = chatHistory.slice(-8)
+      .map((m) => `${m.role === 'user' ? '사용자' : 'AI'}: ${String(m.content || '').slice(0, 200)}`)
+      .join('\n');
+
     const systemPrompt = [
       '너는 "책유형테스트" 서비스의 심화 리포트 작성 AI야.',
-      '아래 책 유형 정보를 바탕으로 이 유형 전용 심화 분석 리포트를 작성해.',
+      '아래 책 유형 정보와, 이 사용자가 실제로 남긴 활동 기록(독후감/AI 상담 대화/추천받은 책)을 참고해서 이 사용자만을 위한 개인화된 심화 분석 리포트를 작성해.',
+      '일반적인 유형 설명만 나열하지 말고, 활동 기록이 있으면 그 내용을 구체적으로 언급하면서("독후감에서 ~라고 쓰신 걸 보면" 처럼) 개인화해서 써줘. 활동 기록이 없으면 유형 정보만으로 작성해.',
       '반드시 아래 4개 섹션으로, 각 섹션 제목 앞에 "## "를 붙여서 구분해줘:',
-      '## 심층 성향 분석 (이 유형의 심리적 특징을 3~4문단으로 깊이 있게)',
-      '## 나에게 맞는 독서 루틴 (이 유형에게 맞는 독서 시간대·환경·방법 제안)',
-      '## 더 읽으면 좋은 책 5권 (이미 추천된 책과 겹치지 않는, 실제로 존재하는 책만. [[책:정확한 제목|저자]] 형식으로 표기하고 각 책마다 왜 이 유형에게 맞는지 한 줄 설명)',
-      '## 성장 포인트 (이 유형이 독서를 통해 성장하려면 어떤 시도를 해보면 좋을지 조언)',
+      '## 심층 성향 분석 (유형 특징 + 실제 독후감/상담 내용에서 드러난 구체적 성향을 엮어서 3~4문단)',
+      '## 나에게 맞는 독서 루틴 (유형과 실제 활동 패턴을 함께 고려한 제안)',
+      '## 더 읽으면 좋은 책 5권 (기본 추천 및 이미 추천받은 책과 겹치지 않는, 실제로 존재하는 책만. [[책:정확한 제목|저자]] 형식으로 표기하고 각 책마다 왜 이 사용자에게 맞는지 한 줄 설명)',
+      '## 성장 포인트 (독후감/상담에서 보이는 부족한 지점이나 다음에 시도해볼 만한 것 제안)',
       '중요: 5권은 실제로 존재하는 책만 추천하고, 확실하지 않은 책은 절대 지어내지 마.',
       `유형명: ${tc.name || ''}`,
       `유형 설명: ${tc.longDesc || ''}`,
-      (tc.books && tc.books.length) ? `이미 추천된 책: ${tc.books.join(', ')}` : '',
-      '전체적으로 따뜻하고 통찰력 있는 톤으로, 진짜 전문 리포트처럼 정성껏 작성해줘.',
+      (tc.books && tc.books.length) ? `기본 추천 6권(중복 금지): ${tc.books.join(', ')}` : '',
+      reviewsText ? `사용자가 쓴 독후감:\n${reviewsText}` : '사용자가 아직 독후감을 쓰지 않았어요.',
+      recommendedText ? `AI 상담에서 이미 추천받은 책: ${recommendedText}` : '',
+      recentChatText ? `최근 AI 상담 대화 일부:\n${recentChatText}` : 'AI 상담 이용 기록이 없어요.',
+      '전체적으로 따뜻하고 통찰력 있는 톤으로, 이 사람만을 위한 리포트처럼 정성껏 작성해줘.',
     ].filter(Boolean).join('\n');
 
     try {
       const content = await callClaude(systemPrompt, [{ role: 'user', content: '심화 리포트 작성해줘' }], 1800);
-      user.deepReport = { code: tc.code, content, generatedAt: new Date().toISOString() };
+      user.deepReport = { code: tc.code, fingerprint, content, generatedAt: new Date().toISOString() };
       await setUser(user.email, user);
       sendJson(res, 200, { content, cached: false });
     } catch (e) {
@@ -1085,6 +1135,24 @@ async function handleRequest(req, res){
     return;
   }
 
+  // ---- 문의 접수 (환불 요청, 비밀번호 찾기 등). 로그인 상태면 세션 이메일 사용, 아니면 body.email 필요 ----
+  if (url.pathname === '/api/support' && req.method === 'POST') {
+    const body = await readJsonBody(req).catch(() => null);
+    if (!body || !body.message || !String(body.message).trim()) { sendJson(res, 400, { error: '문의 내용을 입력해주세요.' }); return; }
+    const sessionUser = await getSessionUser(req);
+    const email = sessionUser ? sessionUser.email : String(body.email || '').trim().toLowerCase();
+    if (!email || !EMAIL_RE.test(email)) { sendJson(res, 400, { error: '연락받을 이메일을 정확히 입력해주세요.' }); return; }
+    await addSupportEntry({
+      email,
+      category: ['refund', 'password_reset', 'general'].includes(body.category) ? body.category : 'general',
+      message: String(body.message).slice(0, 2000),
+      createdAt: new Date().toISOString(),
+      status: 'open',
+    });
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
   // ---- 관리자: 비밀번호 찾기 요청 시 수동으로 비밀번호 재설정 (이메일 발송 인프라 없어서 임시로 수동 처리) ----
   if (url.pathname === '/api/admin/reset-password' && req.method === 'POST') {
     const body = await readJsonBody(req).catch(() => null);
@@ -1110,6 +1178,14 @@ async function handleRequest(req, res){
       pending: payments.pending.filter((p) => p.status === 'pending').slice(-50).reverse(),
       unmatched: payments.unmatched.slice(-50).reverse(),
     });
+    return;
+  }
+
+  // ---- 관리자: 문의 목록 조회 ----
+  if (url.pathname === '/api/admin/support-list' && req.method === 'GET') {
+    if (!ADMIN_KEY || url.searchParams.get('adminKey') !== ADMIN_KEY) { sendJson(res, 401, { error: '관리자 키가 맞지 않아요.' }); return; }
+    const list = await listSupportEntries();
+    sendJson(res, 200, { list: list.slice(0, 100) });
     return;
   }
 
@@ -1142,6 +1218,12 @@ async function handleRequest(req, res){
       <p style="color:#666;font-size:13px;">계좌이체 결제 요청했는데 자동매칭 안 된 건들. 새로고침 버튼 눌러서 확인.</p>
       <button id="refreshPending">새로고침</button>
       <div id="pendingList" style="margin-top:14px;font-size:13px;"></div>
+
+      <hr style="margin:32px 0;">
+      <h2>문의 목록 (환불/비밀번호 찾기 등)</h2>
+      <p style="color:#666;font-size:13px;">사용자가 앱에서 보낸 문의. 확인 후 이메일로 직접 답장해주면 됨.</p>
+      <button id="refreshSupport">새로고침</button>
+      <div id="supportList" style="margin-top:14px;font-size:13px;"></div>
 
       <hr style="margin:32px 0;">
       <h2>월간 큐레이션 푸시 발송</h2>
@@ -1191,6 +1273,20 @@ async function handleRequest(req, res){
           html += '</ul><b>매칭 실패 문자(' + data.unmatched.length + ')</b><ul>';
           data.unmatched.forEach(u => {
             html += '<li>' + u.receivedAt + ' · 금액추정 ' + (u.amount || '?') + '원 · "' + u.text + '"</li>';
+          });
+          html += '</ul>';
+          el.innerHTML = html;
+        };
+        document.getElementById('refreshSupport').onclick = async () => {
+          const adminKey = document.getElementById('adminKey').value;
+          const res = await fetch('/api/admin/support-list?adminKey=' + encodeURIComponent(adminKey));
+          const data = await res.json();
+          const el = document.getElementById('supportList');
+          if (!res.ok) { el.textContent = '오류: ' + data.error; return; }
+          const catLabel = { refund: '환불', password_reset: '비밀번호 찾기', general: '일반' };
+          let html = '<b>문의(' + data.list.length + ')</b><ul>';
+          data.list.forEach(s => {
+            html += '<li>[' + (catLabel[s.category] || s.category) + '] ' + s.email + ' · ' + s.createdAt + '<br>' + s.message + '</li>';
           });
           html += '</ul>';
           el.innerHTML = html;
