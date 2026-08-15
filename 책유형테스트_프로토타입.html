@@ -60,7 +60,12 @@
   body{margin:0;font-family:"Pretendard","Apple SD Gothic Neo",sans-serif;background:var(--bg);color:var(--ink);}
   #app{max-width:640px;margin:0 auto;padding:32px 20px 80px;min-height:100vh;}
   .serif{font-family:"Noto Serif KR","Georgia",serif;}
-  .brand{font-size:13px;color:var(--sub);letter-spacing:.08em;text-transform:uppercase;margin-bottom:28px;text-align:center;}
+  .brand{font-size:13px;color:var(--sub);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px;text-align:center;}
+  .navbar{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:24px;}
+  .navbar a,.navbar span{font-size:13.5px;padding:7px 16px;border-radius:999px;text-decoration:none;line-height:1.3;}
+  .navbar a{color:var(--ink);background:var(--card);border:1px solid var(--line);font-weight:600;}
+  .navbar a:hover{border-color:var(--accent);color:var(--accent);}
+  .navbar span.active{background:var(--accent);color:#fff;font-weight:700;border:1px solid var(--accent);}
   .hero{text-align:center;padding:40px 0 20px;}
   .hero h1{font-size:26px;font-weight:600;margin:0 0 14px;line-height:1.4;}
   .hero p{font-size:15px;color:var(--sub);line-height:1.7;margin:0 auto 28px;max-width:420px;}
@@ -822,7 +827,8 @@ function showResult(code, sums, shared){
   const type = TYPES[code];
   trackEvent(shared ? 'view_shared_result' : 'view_result', {type: code});
   app.innerHTML = `
-    <div class="brand">TEXT TYPE 결과${(!shared && currentUser) ? ` · ${navLine('result', code)}` : ''}</div>
+    <div class="brand">TEXT TYPE 결과</div>
+    ${(!shared && currentUser) ? navLine('result', code) : ''}
     <div class="resulthead">
       <div class="mascot-wrap"><img class="mascot-img mascot-lg" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터" style="background:${type.color};"></div>
       <div class="code">${code} 유형</div>
@@ -1203,7 +1209,8 @@ function attachBookLinks(msgEl, books, code, logEl){
 async function renderChat(code){
   const type = TYPES[code];
   app.innerHTML = `
-    <div class="brand">TEXT TYPE · AI 상담${currentUser ? ` · ${navLine('chat', code)}` : ''}</div>
+    <div class="brand">TEXT TYPE · AI 상담</div>
+    ${currentUser ? navLine('chat', code) : ''}
     <div class="chatwrap">
       <div class="chathead">
         <div class="mascot-wrap"><img class="mascot-img mascot-sm" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터"></div>
@@ -1308,13 +1315,14 @@ function escapeHtml(s){
 function navLine(activeKey, code){
   if (!currentUser) return '';
   const items = [];
-  if (currentUser.resultType) items.push({ key: 'home', label: '홈' });
-  if (code) items.push({ key: 'result', label: '결과' });
-  if (code || currentUser.resultType) items.push({ key: 'chat', label: 'AI상담' });
-  return items.map((it) => it.key === activeKey
-    ? `<span style="font-weight:600;">${it.label}</span>`
-    : `<a href="#" data-nav="${it.key}" style="color:var(--accent);">${it.label}</a>`
-  ).join(' · ');
+  if (currentUser.resultType) items.push({ key: 'home', label: '🏠 홈' });
+  if (code) items.push({ key: 'result', label: '📊 결과' });
+  if (code || currentUser.resultType) items.push({ key: 'chat', label: '💬 AI상담' });
+  if (!items.length) return '';
+  return `<div class="navbar">${items.map((it) => it.key === activeKey
+    ? `<span class="active">${it.label}</span>`
+    : `<a href="#" data-nav="${it.key}">${it.label}</a>`
+  ).join('')}</div>`;
 }
 function wireNavLine(code){
   document.querySelectorAll('[data-nav]').forEach((a) => {
@@ -1333,7 +1341,8 @@ function wireNavLine(code){
 async function renderDeepReport(code){
   const type = TYPES[code];
   app.innerHTML = `
-    <div class="brand">TEXT TYPE · 심화 리포트${currentUser ? ` · ${navLine('deepreport', code)}` : ''}</div>
+    <div class="brand">TEXT TYPE · 심화 리포트</div>
+    ${currentUser ? navLine('deepreport', code) : ''}
     <div class="resulthead" style="padding-bottom:0;">
       <div class="mascot-wrap"><img class="mascot-img mascot-sm" src="${CHARACTERS[code]}" alt="${type.name} 캐릭터" style="background:${type.color};"></div>
       <div class="code">${code} 유형 · 심화 분석</div>
@@ -1418,7 +1427,8 @@ async function renderHome(){
   const monthIdx = type ? type.books.indexOf(monthBook) : -1;
 
   app.innerHTML = `
-    <div class="brand">TEXT TYPE · ${navLine('home', currentUser.resultType)}</div>
+    <div class="brand">TEXT TYPE</div>
+    ${navLine('home', currentUser.resultType)}
     <p style="font-size:12px;color:var(--sub);margin:2px 0 4px;">${escapeHtml(currentUser.email)}${type ? ` · ${type.name}` : ''}</p>
 
     ${type ? `
