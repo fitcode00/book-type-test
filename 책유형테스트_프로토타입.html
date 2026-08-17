@@ -1051,7 +1051,7 @@ async function renderSubscribe(code, target){
       <p class="authhint" id="subInfo">불러오는 중...</p>
       <div id="subBankBox" style="display:none;margin-top:14px;padding:14px;border-radius:10px;background:#f6f5f2;font-size:14px;line-height:1.7;"></div>
       <div class="btnrow" id="subActions" style="margin-top:14px;"></div>
-      <p style="font-size:11.5px;color:var(--sub);margin-top:16px;">결제·환불 관련 문의는 fitcode00@gmail.com으로 연락주세요. (정당한 환불 요청은 영업일 기준 3일 이내에 처리할게요.)</p>
+      <p style="font-size:11.5px;color:var(--sub);margin-top:16px;">결제·환불 관련 문의는 fitcode00@gmail.com으로 연락주세요. (환불 요청은 영업일 기준 3일 이내에 처리할게요.)</p>
       <button class="btn ghost" id="subBackBtn" style="margin-top:18px;">뒤로가기</button>
     </div>`;
 
@@ -1268,6 +1268,7 @@ function navLine(activeKey, code){
   if (currentUser.resultType) items.push({ key: 'home', label: '홈', icon: '🏠' });
   if (code) items.push({ key: 'result', label: '결과', icon: '📊' });
   if (code || currentUser.resultType) items.push({ key: 'chat', label: 'AI상담', icon: '💬' });
+  if (code || currentUser.resultType) items.push({ key: 'deepreport', label: '심화', icon: '🔒' });
   if (!items.length) return '';
   const inner = (it) => `${it.label}<span class="navicon">${it.icon}</span>`;
   return `<div class="navbar">${items.map((it) => it.key === activeKey
@@ -1284,6 +1285,7 @@ function wireNavLine(code){
       if (k === 'home') renderHome();
       else if (k === 'result') showResult(c, null, false);
       else if (k === 'chat') openAiChat(c);
+      else if (k === 'deepreport') openDeepReport(c);
     };
   });
 }
