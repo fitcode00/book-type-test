@@ -1268,7 +1268,6 @@ function navLine(activeKey, code){
   if (currentUser.resultType) items.push({ key: 'home', label: '홈', icon: '🏠' });
   if (code) items.push({ key: 'result', label: '결과', icon: '📊' });
   if (code || currentUser.resultType) items.push({ key: 'chat', label: 'AI상담', icon: '💬' });
-  if (code || currentUser.resultType) items.push({ key: 'deepreport', label: '심화', icon: '🔒' });
   if (!items.length) return '';
   const inner = (it) => `${it.label}<span class="navicon">${it.icon}</span>`;
   return `<div class="navbar">${items.map((it) => it.key === activeKey
@@ -1399,14 +1398,14 @@ async function renderHome(){
       <div class="statbox"><div class="sv">${baseTitles.length + extraBooks.length}</div><div class="sl">쌓인 책</div></div>
     </div>
 
-    <div class="sectiontitle" style="margin-top:24px;">AI와의 대화</div>
-    <div class="card" id="chatPreviewCard"><p style="font-size:12.5px;color:var(--sub);margin:0;">불러오는 중...</p></div>
-
     <div class="sectiontitle" style="margin-top:24px;">알림</div>
     <div class="card" style="text-align:center;">
       <p style="font-size:12.5px;color:var(--sub);margin:0 0 12px;">매달 새 책 큐레이션을 알림으로 받아보세요.</p>
       <button class="btn ghost" id="pushToggleBtn">불러오는 중...</button>
     </div>
+
+    <div class="sectiontitle" style="margin-top:24px;">AI와의 대화</div>
+    <div class="card" id="chatPreviewCard"><p style="font-size:12.5px;color:var(--sub);margin:0;">불러오는 중...</p></div>
 
     <div class="sectiontitle" style="margin-top:24px;">내 책장</div>
     ${(baseTitles.length + extraBooks.length) ? `
