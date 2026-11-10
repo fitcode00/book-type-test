@@ -1,0 +1,29 @@
+name: blog
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 매일 09:00 KST
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node blog/publish.js
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          WP_STATUS: ${{ vars.WP_STATUS }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naver-paste-ready
+          path: blog/out/naver
+      - run: |
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git add blog/published.json
+          git diff --cached --quiet || (git commit -m "blog: update published state" && git push)

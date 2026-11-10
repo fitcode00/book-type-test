@@ -6,3 +6,4 @@ data/
 
 # npm 패키지 (배포 서버가 package.json 보고 알아서 설치함)
 node_modules/
+blog/out/
