@@ -14,16 +14,9 @@ jobs:
         with: { node-version: 22 }
       - run: node blog/publish.js
         env:
-          WP_URL: ${{ secrets.WP_URL }}
-          WP_USER: ${{ secrets.WP_USER }}
-          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
-          WP_STATUS: ${{ vars.WP_STATUS }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: naver-paste-ready
-          path: blog/out/naver
+          SECRETS: ${{ toJSON(secrets) }}
       - run: |
           git config user.name github-actions
           git config user.email actions@github.com
-          git add blog/published.json
+          git add blog/published.json blog/out
           git diff --cached --quiet || (git commit -m "blog: update published state" && git push)
