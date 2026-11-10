@@ -2,5 +2,6 @@
   "book":      { "wp": "BOOK",      "naver": true },
   "food":      { "wp": "FOOD",      "naver": true },
   "challenge": { "wp": "CHALLENGE", "naver": true },
-  "travel":    { "wp": "TRAVEL",    "naver": true }
+  "travel":    { "wp": "TRAVEL",    "naver": true },
+  "date":      { "wp": "DATE",      "naver": true }
 }
